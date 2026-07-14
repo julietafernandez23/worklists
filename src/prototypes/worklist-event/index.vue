@@ -194,7 +194,7 @@ async function onAdd() {
 const canAdd = computed(() => selectedPages.value.trim().length > 0)
 
 const primaryAction = computed(() => ({
-  label: addPending.value ? 'Checking…' : 'Add',
+  label: 'Add',
   actionType: 'progressive' as const,
   disabled: !canAdd.value || addPending.value,
 }))
@@ -421,6 +421,15 @@ function onRemoveCancelled() {
 
 .ew__table-wrap {
   overflow-x: auto;
+}
+
+/* Keep sortable header text the same color as regular headers */
+.ew__table :deep(.cdx-table__table__header--sortable) {
+  color: var(--color-base);
+}
+
+.ew__table :deep(.cdx-table__table__header--sortable:hover) {
+  color: var(--color-base);
 }
 
 .ew__article-link {
