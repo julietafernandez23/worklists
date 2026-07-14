@@ -99,6 +99,8 @@ interface Props {
   languagesCount?: number
 }
 
+const emit = defineEmits<{ editClick: [] }>()
+
 const props = withDefaults(defineProps<Props>(), {
   lang: undefined,
   dir: undefined,
@@ -227,6 +229,7 @@ watch(
     :skin="props.skin"
     :theme="props.theme"
     :languages-count="props.languagesCount"
+    @edit-click="emit('editClick')"
   >
     <CdxProgressBar v-if="loading" inline aria-label="Loading article" />
 

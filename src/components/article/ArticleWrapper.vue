@@ -32,6 +32,8 @@ const props = withDefaults(defineProps<Props>(), {
   languagesCount: undefined,
 })
 
+const emit = defineEmits<{ editClick: [] }>()
+
 const inheritedSkin = inject(PROTOWIKI_CHROME_SKIN)
 const inheritedTheme = inject(PROTOWIKI_CHROME_THEME)
 
@@ -64,6 +66,7 @@ const chromeHeaderLabel = computed(() => {
       :title="chromeHeaderLabel"
       :languages-count="props.languagesCount"
       :skin="props.skin"
+      @edit-click="emit('editClick')"
     />
     <slot />
   </article>
