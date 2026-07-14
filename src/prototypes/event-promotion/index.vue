@@ -204,6 +204,7 @@ function onBackToRead() {
   flex: 1;
   overflow-y: auto;
   padding: var(--spacing-100);
+  padding-top: calc(52px + var(--spacing-100));
 }
 
 .ve__content {
@@ -238,13 +239,16 @@ function onBackToRead() {
 
 /* Toolbar */
 .ve__toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
   display: flex;
   align-items: stretch;
   padding: 0;
   border-bottom: var(--border-width-base) solid var(--border-color-subtle);
   background-color: var(--background-color-base);
-  flex-shrink: 0;
-  order: -1;
 }
 
 .ve__toolbar-item {
