@@ -19,7 +19,7 @@ import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 
 definePage({
   meta: {
-    title: 'Worklist',
+    title: 'Event worklist MVP',
     description: 'Event worklist — article lookup, bulk paste, and table view.',
   },
 })
@@ -37,6 +37,7 @@ interface WorklistRow {
 
 const activeTab = ref('worklist')
 const showAddDialog = ref(false)
+const showIntroDialog = ref(true)
 
 // Lookup state
 const lookupInput = ref('')
@@ -317,6 +318,20 @@ function onRemoveCancelled() {
   </ChromeWrapper>
 
   <CdxDialog
+    v-model:open="showIntroDialog"
+    title="Try Worklists on Wikipedia"
+    close-button-label="Close"
+    :dismissable="false"
+    :primary-action="{ label: 'Get started', actionType: 'progressive' }"
+    @primary="showIntroDialog = false"
+  >
+    <div class="ew__intro-body">
+      <p>Worklists let event organizers and participants build a shared list of Wikipedia articles to focus on together, so contributors know where to start.</p>
+      <p>This is an early prototype. Explore the page and try adding some articles to the list. Your experience helps us shape what gets built.</p>
+    </div>
+  </CdxDialog>
+
+  <CdxDialog
     v-model:open="showRemoveDialog"
     title="Remove article from worklist"
     close-button-label="Cancel"
@@ -458,5 +473,19 @@ function onRemoveCancelled() {
 
 .ew__remove-message {
   margin: 0;
+}
+
+.ew__intro-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+}
+
+.ew__intro-body p {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
 }
 </style>

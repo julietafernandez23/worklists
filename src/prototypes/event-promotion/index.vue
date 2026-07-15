@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { CdxButton, CdxIcon, CdxProgressBar } from '@wikimedia/codex'
+import { CdxButton, CdxDialog, CdxIcon, CdxProgressBar } from '@wikimedia/codex'
 import {
   cdxIconArrowNext,
   cdxIconClose,
@@ -35,6 +35,7 @@ const veLoading = ref(false)
 const showPublishConfirm = ref(false)
 const veHasEdits = ref(false)
 const showBottomSheet = ref(false)
+const showIntroDialog = ref(true)
 
 async function openVE() {
   veMode.value = true
@@ -161,6 +162,20 @@ function onBackToRead() {
       </CdxButton>
     </div>
   </div>
+
+  <CdxDialog
+    v-model:open="showIntroDialog"
+    title="Try Event Promotion on Wikipedia"
+    close-button-label="Close"
+    :dismissable="false"
+    :primary-action="{ label: 'Get started', actionType: 'progressive' }"
+    @primary="showIntroDialog = false"
+  >
+    <div class="ep__intro-body">
+      <p>Some editors are already working on relevant articles without knowing an event exists. This feature shows them a one-time invite when they edit an article on an event's worklist.</p>
+      <p>This is an early prototype. Read the article, try making an edit, and see what happens when you publish. Your experience helps us shape what gets built.</p>
+    </div>
+  </CdxDialog>
 </template>
 
 <style scoped>
@@ -382,5 +397,18 @@ function onBackToRead() {
 }
 .ep-sheet-leave-to .ep__sheet {
   transform: translateY(100%);
+}
+.ep__intro-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+}
+
+.ep__intro-body p {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
 }
 </style>
