@@ -346,7 +346,7 @@ function onRemoveCancelled() {
 
   <CdxDialog
     v-model:open="showAddDialog"
-    title="Add to worklist"
+    title="Add articles to worklist"
     close-button-label="Close"
     :dismissable="true"
     :primary-action="primaryAction"
@@ -354,26 +354,28 @@ function onRemoveCancelled() {
   >
     <div class="ew__dialog-body">
       <CdxField>
-        <template #label>Search Wikipedia articles</template>
+        <template #label>Search Wikipedia</template>
         <div :class="{ 'ew__lookup--redlink': lookupIsRedLink }">
           <CdxLookup
             v-model:selected="lookupSelected"
             v-model:input-value="lookupInput"
             :menu-items="lookupMenuItems"
             :loading="lookupPending"
-            placeholder="Search article name…"
+            placeholder="Search Wikipedia"
             @input="onLookupInput"
           />
         </div>
       </CdxField>
 
+      <div class="ew__dialog-or">or</div>
+
       <CdxField>
-        <template #label>Articles to add</template>
-        <template #description>Select from the search above, or paste article names, one per line.</template>
+        <template #label>List articles</template>
+        <template #description>One title per line</template>
         <CdxTextArea
           v-model="selectedPages"
           :rows="5"
-          placeholder="e.g. Moon"
+          :placeholder="'Earth\nMoon\nJupiter'"
           class="ew__pages-textarea"
         />
       </CdxField>
@@ -464,7 +466,27 @@ function onRemoveCancelled() {
 .ew__dialog-body {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-100);
+  gap: var(--spacing-75);
+}
+
+.ew__dialog-or + * {
+  margin-top: calc(-1 * var(--spacing-50));
+}
+
+.ew__dialog-or {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-75);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  color: var(--color-subtle);
+}
+
+.ew__dialog-or::before,
+.ew__dialog-or::after {
+  content: '';
+  flex: 1;
+  border-top: var(--border-width-base) solid var(--border-color-subtle);
 }
 
 .ew__pages-textarea :deep(textarea) {

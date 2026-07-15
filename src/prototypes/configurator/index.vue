@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CdxButton, CdxIcon, CdxToggleSwitch, CdxRadio, CdxInfoChip } from '@wikimedia/codex'
+import { CdxButton, CdxIcon, CdxToggleSwitch, CdxRadio, CdxInfoChip, CdxTab, CdxTabs } from '@wikimedia/codex'
 import { cdxIconConfigure, cdxIconClose } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
+import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 
 definePage({
   meta: {
@@ -65,6 +66,7 @@ const wikiPosition = ref<WikiPosition>('below-description')
 type DatePosition = 'hidden' | 'top-right' | 'below-title' | 'below-description'
 const datePosition = ref<DatePosition>('hidden')
 const showQuality = ref(false)
+const activeTab = ref('worklist')
 const showBottomSheet = ref(false)
 
 onMounted(async () => {
@@ -104,9 +106,12 @@ onMounted(async () => {
 
 <template>
   <ChromeWrapper :last-edited-notice="false">
+    <SpecialPageWrapper title="Wiki Loves Earth 2026">
+      <CdxTabs v-model:active="activeTab" class="wl__tabs">
+        <CdxTab name="details" label="Event details" :disabled="true" />
+        <CdxTab name="participants" label="Participants" :disabled="true" />
+        <CdxTab name="worklist" label="Worklist">
     <div class="wl__page">
-      <h1 class="wl__heading">Worklist</h1>
-
       <div v-if="loading" class="wl__loading">Loading articles…</div>
 
       <ul v-else class="wl__list" role="list">
@@ -159,6 +164,10 @@ onMounted(async () => {
         </li>
       </ul>
     </div>
+        </CdxTab>
+        <CdxTab name="contributions" label="Contributions" :disabled="true" />
+      </CdxTabs>
+    </SpecialPageWrapper>
 
     <!-- FAB -->
     <CdxButton
@@ -237,17 +246,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.wl__page {
-  padding: var(--spacing-100);
-  padding-bottom: 96px;
+.wl__tabs {
+  margin-bottom: var(--spacing-150);
 }
 
-.wl__heading {
-  margin: 0 0 var(--spacing-100);
-  font-family: var(--font-family-system-sans);
-  font-size: 1.5rem;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-base);
+.wl__page {
+  padding-bottom: 96px;
 }
 
 .wl__loading {
