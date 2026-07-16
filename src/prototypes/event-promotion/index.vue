@@ -173,7 +173,7 @@ function onBackToRead() {
   >
     <div class="ep__intro-body">
       <p>Some editors are already working on relevant articles without knowing an event exists. This feature shows them a one-time invite when they edit an article on an event's worklist.</p>
-      <p>This is an early prototype. Read the article, try making an edit, and see what happens when you publish. Your experience helps us shape what gets built.</p>
+      <p>This is an early prototype. Edit this article and see what happens when you publish. Your experience helps us shape what gets built.</p>
     </div>
   </CdxDialog>
 </template>

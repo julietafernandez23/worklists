@@ -251,6 +251,7 @@ onMounted(async () => {
 }
 
 .wl__page {
+  padding-top: var(--spacing-200);
   padding-bottom: 96px;
 }
 
