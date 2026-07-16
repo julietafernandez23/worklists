@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CdxButton, CdxIcon, CdxToggleSwitch, CdxRadio, CdxInfoChip, CdxTab, CdxTabs } from '@wikimedia/codex'
-import { cdxIconConfigure, cdxIconClose } from '@wikimedia/codex-icons'
+import { CdxAccordion, CdxButton, CdxField, CdxIcon, CdxSelect, CdxToggleSwitch, CdxTab, CdxTabs, CdxProgressBar } from '@wikimedia/codex'
+import { cdxIconClose, cdxIconInfo } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 
@@ -14,6 +14,11 @@ definePage({
 
 type Quality = 'low' | 'medium' | 'high'
 
+interface QualityMetric {
+  label: string
+  progress: number
+}
+
 interface ArticleCard {
   title: string
   description: string
@@ -21,18 +26,42 @@ interface ArticleCard {
   url: string
   dateAdded: string
   dateAddedShort: string
+  viewsPerMonth: string
   quality: Quality
+  qualityMetrics: QualityMetric[]
+}
+
+const QUALITY_METRIC_LABELS = [
+  'Article Length',
+  'References',
+  'Internal Links',
+  'Categories',
+  'Media (Images/Files)',
+  'Article Structure',
+  'Infobox',
+  'Maintenance Messages',
+] as const
+
+const QUALITY_PROFILES: Record<Quality, number[]> = {
+  high: [100, 100, 76, 80, 100, 76, 100, 0],
+  medium: [76, 65, 50, 40, 76, 55, 0, 0],
+  low: [45, 30, 20, 13, 50, 25, 0, 0],
+}
+
+function fakeQualityMetrics(quality: Quality, index: number): QualityMetric[] {
+  return QUALITY_METRIC_LABELS.map((label, metricIndex) => {
+    const base = QUALITY_PROFILES[quality][metricIndex]
+    const variation = (index + metricIndex) % 3 === 0 ? -8 : (index + metricIndex) % 3 === 1 ? 5 : 0
+    const progress = Math.max(0, Math.min(100, base + variation))
+    return { label, progress }
+  })
 }
 
 const QUALITY_CYCLE: Quality[] = ['high', 'medium', 'low', 'high', 'medium', 'low', 'high']
 
-const QUALITY_STATUS: Record<Quality, 'error' | 'warning' | 'success'> = {
-  low: 'error',
-  medium: 'warning',
-  high: 'success',
-}
-
 const BASE_DATE = new Date('2026-07-10')
+const VIEW_COUNTS = [20, 45, 12, 8, 15, 120, 33]
+
 function fakeDate(index: number): { full: string; short: string } {
   const d = new Date(BASE_DATE)
   d.setDate(d.getDate() - index)
@@ -43,6 +72,11 @@ function fakeDate(index: number): { full: string; short: string } {
     full: `Added ${month} ${day}, ${year}`,
     short: `${month} ${day}, ${year}`,
   }
+}
+
+function fakeViews(index: number): string {
+  const count = VIEW_COUNTS[index % VIEW_COUNTS.length]
+  return `${count}k visits last month`
 }
 
 const ARTICLES = [
@@ -65,9 +99,58 @@ type WikiPosition = 'hidden' | 'below-title' | 'below-description'
 const wikiPosition = ref<WikiPosition>('below-description')
 type DatePosition = 'hidden' | 'top-right' | 'below-title' | 'below-description'
 const datePosition = ref<DatePosition>('hidden')
-const showQuality = ref(false)
+type ViewsPosition = 'hidden' | 'below-title' | 'below-description'
+const viewsPosition = ref<ViewsPosition>('hidden')
+type QualityDisplay = 'hidden' | 'plain' | 'with-breakdown'
+const qualityDisplay = ref<QualityDisplay>('hidden')
 const activeTab = ref('worklist')
-const showBottomSheet = ref(false)
+const showConfigurePanel = ref(false)
+const articleContextOpen = ref(true)
+const qualitySheetArticle = ref<ArticleCard | null>(null)
+
+const POSITION_OPTIONS = [
+  { value: 'hidden', label: 'Hidden' },
+  { value: 'below-title', label: 'Below title' },
+  { value: 'below-description', label: 'Below description' },
+]
+
+const DATE_OPTIONS = [
+  { value: 'hidden', label: 'Hidden' },
+  { value: 'top-right', label: 'Top right' },
+  { value: 'below-title', label: 'Below title' },
+  { value: 'below-description', label: 'Below description' },
+]
+
+const QUALITY_OPTIONS = [
+  { value: 'hidden', label: 'Hidden' },
+  { value: 'plain', label: 'Plain' },
+  { value: 'with-breakdown', label: 'With breakdown' },
+]
+
+function openQualitySheet(card: ArticleCard) {
+  qualitySheetArticle.value = card
+}
+
+function closeQualitySheet() {
+  qualitySheetArticle.value = null
+}
+
+function toggleConfigurePanel() {
+  showConfigurePanel.value = !showConfigurePanel.value
+  if (showConfigurePanel.value) {
+    articleContextOpen.value = true
+  }
+}
+
+type MetaPosition = 'below-title' | 'below-description'
+
+function cardMetaItems(card: ArticleCard, position: MetaPosition): string[] {
+  const items: string[] = []
+  if (wikiPosition.value === position) items.push('English Wikipedia')
+  if (datePosition.value === position) items.push(card.dateAdded)
+  if (viewsPosition.value === position) items.push(card.viewsPerMonth)
+  return items
+}
 
 onMounted(async () => {
   const results = await Promise.all(
@@ -84,7 +167,9 @@ onMounted(async () => {
           url: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
           dateAdded: fakeDate(index).full,
           dateAddedShort: fakeDate(index).short,
+          viewsPerMonth: fakeViews(index),
           quality: QUALITY_CYCLE[index],
+          qualityMetrics: fakeQualityMetrics(QUALITY_CYCLE[index], index),
         } satisfies ArticleCard
       } catch {
         return {
@@ -94,7 +179,9 @@ onMounted(async () => {
           url: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
           dateAdded: fakeDate(index).full,
           dateAddedShort: fakeDate(index).short,
+          viewsPerMonth: fakeViews(index),
           quality: QUALITY_CYCLE[index],
+          qualityMetrics: fakeQualityMetrics(QUALITY_CYCLE[index], index),
         }
       }
     }),
@@ -112,6 +199,65 @@ onMounted(async () => {
         <CdxTab name="participants" label="Participants" :disabled="true" />
         <CdxTab name="worklist" label="Worklist">
     <div class="wl__page">
+      <div class="wl__configure-bar">
+        <CdxButton
+          weight="normal"
+          :action="showConfigurePanel ? 'default' : 'progressive'"
+          @click="toggleConfigurePanel"
+        >
+          {{ showConfigurePanel ? 'Close' : 'Configure' }}
+        </CdxButton>
+      </div>
+
+      <div v-show="showConfigurePanel" class="wl__configure-panel">
+        <CdxAccordion v-model="articleContextOpen" separation="divider">
+          <template #title>Article context</template>
+          <template #description>Select and adjust how article signals are presented on each card.</template>
+          <div class="wl__configure-fields">
+            <CdxField>
+              <template #label>Thumbnail</template>
+              <CdxToggleSwitch v-model="showThumbnail" />
+            </CdxField>
+            <CdxField>
+              <template #label>Description</template>
+              <CdxToggleSwitch v-model="showDescription" />
+            </CdxField>
+            <CdxField>
+              <template #label>Article quality</template>
+              <CdxSelect
+                v-model:selected="qualityDisplay"
+                :menu-items="QUALITY_OPTIONS"
+                default-label="Hidden"
+              />
+            </CdxField>
+            <CdxField>
+              <template #label>Wiki</template>
+              <CdxSelect
+                v-model:selected="wikiPosition"
+                :menu-items="POSITION_OPTIONS"
+                default-label="Hidden"
+              />
+            </CdxField>
+            <CdxField>
+              <template #label>Date added</template>
+              <CdxSelect
+                v-model:selected="datePosition"
+                :menu-items="DATE_OPTIONS"
+                default-label="Hidden"
+              />
+            </CdxField>
+            <CdxField>
+              <template #label>Views per month</template>
+              <CdxSelect
+                v-model:selected="viewsPosition"
+                :menu-items="POSITION_OPTIONS"
+                default-label="Hidden"
+              />
+            </CdxField>
+          </div>
+        </CdxAccordion>
+      </div>
+
       <div v-if="loading" class="wl__loading">Loading articles…</div>
 
       <ul v-else class="wl__list" role="list">
@@ -127,31 +273,45 @@ onMounted(async () => {
               <span v-if="datePosition === 'top-right'" class="wl__card-date-right">{{ card.dateAddedShort }}</span>
             </div>
             <span
-              v-if="wikiPosition === 'below-title' || datePosition === 'below-title'"
+              v-if="cardMetaItems(card, 'below-title').length"
               class="wl__card-meta"
             >
-              <span v-if="wikiPosition === 'below-title'">English Wikipedia</span>
-              <span v-if="wikiPosition === 'below-title' && datePosition === 'below-title'" class="wl__card-meta-sep"> · </span>
-              <span v-if="datePosition === 'below-title'">{{ card.dateAdded }}</span>
+              <template v-for="(item, index) in cardMetaItems(card, 'below-title')" :key="index">
+                <span v-if="index > 0" class="wl__card-meta-sep"> · </span>
+                <span>{{ item }}</span>
+              </template>
             </span>
             <p v-if="showDescription" class="wl__card-description">{{ card.description }}</p>
             <div
-              v-if="wikiPosition === 'below-description' || datePosition === 'below-description' || showQuality"
+              v-if="cardMetaItems(card, 'below-description').length || qualityDisplay !== 'hidden'"
               class="wl__card-bottom-meta"
             >
               <span
-                v-if="wikiPosition === 'below-description' || datePosition === 'below-description'"
+                v-if="cardMetaItems(card, 'below-description').length"
                 class="wl__card-meta"
               >
-                <span v-if="wikiPosition === 'below-description'">English Wikipedia</span>
-                <span v-if="wikiPosition === 'below-description' && datePosition === 'below-description'" class="wl__card-meta-sep"> · </span>
-                <span v-if="datePosition === 'below-description'">{{ card.dateAdded }}</span>
+                <template v-for="(item, index) in cardMetaItems(card, 'below-description')" :key="index">
+                  <span v-if="index > 0" class="wl__card-meta-sep"> · </span>
+                  <span>{{ item }}</span>
+                </template>
               </span>
-              <CdxInfoChip
-                v-if="showQuality"
-                :status="QUALITY_STATUS[card.quality]"
-                class="wl__card-quality"
-              >{{ card.quality.charAt(0).toUpperCase() + card.quality.slice(1) }} quality</CdxInfoChip>
+              <div v-if="qualityDisplay !== 'hidden'" class="wl__card-quality-wrap">
+                <span
+                  class="wl__card-quality-text"
+                  :class="`wl__card-quality-text--${card.quality}`"
+                >{{ card.quality.charAt(0).toUpperCase() + card.quality.slice(1) }} quality</span>
+                <CdxButton
+                  v-if="qualityDisplay === 'with-breakdown'"
+                  weight="quiet"
+                  :icon-only="true"
+                  size="small"
+                  :aria-label="`View quality breakdown for ${card.title}`"
+                  class="wl__card-quality-info"
+                  @click="openQualitySheet(card)"
+                >
+                  <CdxIcon :icon="cdxIconInfo" size="small" />
+                </CdxButton>
+              </div>
             </div>
           </div>
           <div v-if="showThumbnail && card.thumbnail" class="wl__card-thumb-wrap">
@@ -168,76 +328,45 @@ onMounted(async () => {
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
       </CdxTabs>
     </SpecialPageWrapper>
-
-    <!-- FAB -->
-    <CdxButton
-      class="wl__fab"
-      weight="primary"
-      action="progressive"
-      :icon-only="true"
-      aria-label="Configure card display"
-      @click="showBottomSheet = true"
-    >
-      <CdxIcon :icon="cdxIconConfigure" />
-    </CdxButton>
   </ChromeWrapper>
 
-  <!-- Bottom sheet backdrop -->
+  <!-- Quality breakdown backdrop -->
   <Transition name="wl-backdrop">
     <div
-      v-if="showBottomSheet"
-      class="wl__backdrop"
-      @click.self="showBottomSheet = false"
+      v-if="qualitySheetArticle"
+      class="wl__backdrop wl__backdrop--quality"
+      @click.self="closeQualitySheet"
     />
   </Transition>
 
-  <!-- Bottom sheet -->
+  <!-- Quality breakdown bottom sheet -->
   <Transition name="wl-sheet">
-    <div v-if="showBottomSheet" class="wl__sheet" role="dialog" aria-label="Configure cards">
+    <div
+      v-if="qualitySheetArticle"
+      class="wl__sheet wl__sheet--quality"
+      role="dialog"
+      :aria-label="`Quality breakdown for ${qualitySheetArticle.title}`"
+    >
       <div class="wl__sheet-header">
-        <span class="wl__sheet-title">customize cards</span>
-        <CdxButton weight="quiet" :icon-only="true" aria-label="Close" @click="showBottomSheet = false">
+        <span class="wl__sheet-title">{{ qualitySheetArticle.title }}</span>
+        <CdxButton weight="quiet" :icon-only="true" aria-label="Close" @click="closeQualitySheet">
           <CdxIcon :icon="cdxIconClose" />
         </CdxButton>
       </div>
 
-      <div class="wl__sheet-body">
-        <div class="wl__sheet-row">
-          <label class="wl__sheet-label" for="toggle-thumbnail">thumbnail</label>
-          <CdxToggleSwitch
-            id="toggle-thumbnail"
-            v-model="showThumbnail"
-          />
-        </div>
-        <div class="wl__sheet-row">
-          <label class="wl__sheet-label" for="toggle-description">description</label>
-          <CdxToggleSwitch
-            id="toggle-description"
-            v-model="showDescription"
-          />
-        </div>
-        <div class="wl__sheet-row">
-          <label class="wl__sheet-label" for="toggle-quality">article quality</label>
-          <CdxToggleSwitch
-            id="toggle-quality"
-            v-model="showQuality"
-          />
-        </div>
-        <div class="wl__sheet-option">
-          <span class="wl__sheet-label">wiki</span>
-          <div class="wl__sheet-radios">
-            <CdxRadio v-model="wikiPosition" name="wiki-position" input-value="hidden">hidden</CdxRadio>
-            <CdxRadio v-model="wikiPosition" name="wiki-position" input-value="below-title">below title</CdxRadio>
-            <CdxRadio v-model="wikiPosition" name="wiki-position" input-value="below-description">below description</CdxRadio>
-          </div>
-        </div>
-        <div class="wl__sheet-option">
-          <span class="wl__sheet-label">date added</span>
-          <div class="wl__sheet-radios">
-            <CdxRadio v-model="datePosition" name="date-position" input-value="hidden">hidden</CdxRadio>
-            <CdxRadio v-model="datePosition" name="date-position" input-value="top-right">top right</CdxRadio>
-            <CdxRadio v-model="datePosition" name="date-position" input-value="below-title">below title</CdxRadio>
-            <CdxRadio v-model="datePosition" name="date-position" input-value="below-description">below description</CdxRadio>
+      <div class="wl__quality-grid">
+        <div
+          v-for="metric in qualitySheetArticle.qualityMetrics"
+          :key="metric.label"
+          class="wl__quality-metric"
+        >
+          <span class="wl__quality-metric-label">{{ metric.label }}</span>
+          <div class="wl__quality-metric-bar">
+            <CdxProgressBar
+              :value="metric.progress"
+              :aria-label="`${metric.label}: ${metric.progress}%`"
+            />
+            <span class="wl__quality-metric-value">{{ metric.progress }}%</span>
           </div>
         </div>
       </div>
@@ -252,7 +381,33 @@ onMounted(async () => {
 
 .wl__page {
   padding-top: var(--spacing-200);
-  padding-bottom: 96px;
+}
+
+.wl__configure-bar {
+  margin-bottom: var(--spacing-100);
+}
+
+.wl__configure-panel {
+  margin-bottom: var(--spacing-150);
+  padding: var(--spacing-75);
+  border: var(--border-width-base) solid var(--border-color-base);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-neutral-subtle);
+}
+
+.wl__configure-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-100);
+  padding-top: var(--spacing-50);
+}
+
+.wl__configure-fields :deep(.cdx-field) {
+  margin: 0;
+}
+
+.wl__configure-fields :deep(.cdx-select) {
+  width: 100%;
 }
 
 .wl__loading {
@@ -312,8 +467,33 @@ onMounted(async () => {
   gap: var(--spacing-50);
 }
 
-.wl__card-quality {
-  align-self: flex-start;
+.wl__card-quality-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-25);
+}
+
+.wl__card-quality-text {
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+}
+
+.wl__card-quality-text--low {
+  color: var(--color-destructive);
+}
+
+.wl__card-quality-text--medium {
+  color: var(--color-warning);
+}
+
+.wl__card-quality-text--high {
+  color: var(--color-success);
+}
+
+.wl__card-quality-info {
+  flex-shrink: 0;
 }
 
 .wl__card-title-row .wl__card-title {
@@ -376,24 +556,16 @@ onMounted(async () => {
   display: block;
 }
 
-/* FAB */
-.wl__fab {
-  position: fixed;
-  bottom: 24px;
-  right: 16px;
-  z-index: 10;
-  width: 48px;
-  height: 48px;
-  border-radius: 50% !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
-}
-
 /* Backdrop */
 .wl__backdrop {
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.4);
   z-index: 20;
+}
+
+.wl__backdrop--quality {
+  z-index: 40;
 }
 
 /* Bottom sheet */
@@ -410,6 +582,55 @@ onMounted(async () => {
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
 }
 
+.wl__sheet--quality {
+  z-index: 50;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.wl__quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-75);
+}
+
+.wl__quality-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+  padding: var(--spacing-75);
+  border: var(--border-width-base) solid var(--border-color-subtle);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-base);
+}
+
+.wl__quality-metric-label {
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-base);
+  line-height: var(--line-height-small);
+}
+
+.wl__quality-metric-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-50);
+}
+
+.wl__quality-metric-bar :deep(.cdx-progress-bar) {
+  flex: 1;
+  min-width: 0;
+}
+
+.wl__quality-metric-value {
+  flex-shrink: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  color: var(--color-subtle);
+  line-height: var(--line-height-small);
+}
+
 .wl__sheet-header {
   display: flex;
   align-items: center;
@@ -421,37 +642,6 @@ onMounted(async () => {
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
   font-weight: var(--font-weight-bold);
-  color: var(--color-base);
-}
-
-.wl__sheet-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-75);
-}
-
-.wl__sheet-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.wl__sheet-option {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-50);
-}
-
-.wl__sheet-radios {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: var(--spacing-50) var(--spacing-100);
-}
-
-.wl__sheet-label {
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
   color: var(--color-base);
 }
 
