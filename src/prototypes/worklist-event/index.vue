@@ -346,7 +346,7 @@ function onRemoveCancelled() {
 
   <CdxDialog
     v-model:open="showAddDialog"
-    title="Add articles to worklist"
+    title="Add to worklist"
     close-button-label="Close"
     :dismissable="true"
     :primary-action="primaryAction"
@@ -370,7 +370,7 @@ function onRemoveCancelled() {
       <div class="ew__dialog-or">or</div>
 
       <CdxField>
-        <template #label>List articles</template>
+        <template #label>List pages</template>
         <template #description>One title per line</template>
         <CdxTextArea
           v-model="selectedPages"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CdxAccordion, CdxButton, CdxField, CdxIcon, CdxSelect, CdxToggleSwitch, CdxTab, CdxTabs, CdxProgressBar } from '@wikimedia/codex'
+import { CdxAccordion, CdxButton, CdxIcon, CdxSelect, CdxToggleSwitch, CdxTab, CdxTabs, CdxProgressBar } from '@wikimedia/codex'
 import { cdxIconClose, cdxIconInfo } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
@@ -214,46 +214,50 @@ onMounted(async () => {
           <template #title>Article context</template>
           <template #description>Select and adjust how article signals are presented on each card.</template>
           <div class="wl__configure-fields">
-            <CdxField>
-              <template #label>Thumbnail</template>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Thumbnail</span>
               <CdxToggleSwitch v-model="showThumbnail" />
-            </CdxField>
-            <CdxField>
-              <template #label>Description</template>
+            </div>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Description</span>
               <CdxToggleSwitch v-model="showDescription" />
-            </CdxField>
-            <CdxField>
-              <template #label>Article quality</template>
+            </div>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Article quality</span>
               <CdxSelect
                 v-model:selected="qualityDisplay"
                 :menu-items="QUALITY_OPTIONS"
                 default-label="Hidden"
+                class="wl__configure-select"
               />
-            </CdxField>
-            <CdxField>
-              <template #label>Wiki</template>
+            </div>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Wiki</span>
               <CdxSelect
                 v-model:selected="wikiPosition"
                 :menu-items="POSITION_OPTIONS"
                 default-label="Hidden"
+                class="wl__configure-select"
               />
-            </CdxField>
-            <CdxField>
-              <template #label>Date added</template>
+            </div>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Date added</span>
               <CdxSelect
                 v-model:selected="datePosition"
                 :menu-items="DATE_OPTIONS"
                 default-label="Hidden"
+                class="wl__configure-select"
               />
-            </CdxField>
-            <CdxField>
-              <template #label>Views per month</template>
+            </div>
+            <div class="wl__configure-row">
+              <span class="wl__configure-label">Views per month</span>
               <CdxSelect
                 v-model:selected="viewsPosition"
                 :menu-items="POSITION_OPTIONS"
                 default-label="Hidden"
+                class="wl__configure-select"
               />
-            </CdxField>
+            </div>
           </div>
         </CdxAccordion>
       </div>
@@ -393,21 +397,54 @@ onMounted(async () => {
   border: var(--border-width-base) solid var(--border-color-base);
   border-radius: var(--border-radius-base);
   background-color: var(--background-color-neutral-subtle);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.wl__configure-panel :deep(.cdx-accordion) {
+  overflow: visible;
 }
 
 .wl__configure-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-100);
+  gap: var(--spacing-75);
   padding-top: var(--spacing-50);
+  max-width: 100%;
 }
 
-.wl__configure-fields :deep(.cdx-field) {
-  margin: 0;
+.wl__configure-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 9.5rem);
+  align-items: center;
+  gap: var(--spacing-75);
 }
 
-.wl__configure-fields :deep(.cdx-select) {
+.wl__configure-label {
+  min-width: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  color: var(--color-base);
+  line-height: var(--line-height-medium);
+}
+
+.wl__configure-select {
+  min-width: 0;
   width: 100%;
+}
+
+.wl__configure-select :deep(.cdx-select-vue) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wl__configure-select :deep(.cdx-select-vue__handle) {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .wl__loading {
