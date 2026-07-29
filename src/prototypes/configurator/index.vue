@@ -8,7 +8,8 @@ import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 definePage({
   meta: {
     title: 'Worklist configurator',
-    description: 'Card-based worklist view for Wiki Loves Earth.',
+    description:
+      'Configure which article data to show for each worklist article (pageviews, article quality, and more). View the worklist as a list of cards.',
   },
 })
 

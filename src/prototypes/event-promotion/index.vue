@@ -22,7 +22,7 @@ const router = useRouter()
 definePage({
   meta: {
     title: 'Event promotion',
-    description: 'Prototype for event promotion.',
+    description: 'A banner on article pages that promotes an upcoming wiki event.',
   },
 })
 

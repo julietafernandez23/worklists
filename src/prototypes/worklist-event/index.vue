@@ -19,8 +19,8 @@ import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 
 definePage({
   meta: {
-    title: 'Event worklist MVP',
-    description: 'Event worklist — article lookup, bulk paste, and table view.',
+    title: 'Add to worklist',
+    description: 'Search for an article or paste page titles. View the worklist as a table.',
   },
 })
 
