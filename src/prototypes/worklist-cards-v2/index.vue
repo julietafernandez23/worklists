@@ -800,6 +800,7 @@ onMounted(async () => {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+  margin-top: var(--spacing-50);
 }
 
 .wc2__card-note-header {
