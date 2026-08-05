@@ -861,6 +861,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-50);
+  margin-top: var(--spacing-50);
 }
 
 .wc2__signal {
