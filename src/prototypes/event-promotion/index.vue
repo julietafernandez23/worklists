@@ -36,6 +36,7 @@ const showPublishConfirm = ref(false)
 const veHasEdits = ref(false)
 const showBottomSheet = ref(false)
 const showIntroDialog = ref(true)
+const showHiddenMessage = ref(false)
 
 async function openVE() {
   veMode.value = true
@@ -70,6 +71,11 @@ function onBackToRead() {
   veMode.value = false
   showPublishConfirm.value = false
 }
+
+function onDontShowAgain() {
+  showBottomSheet.value = false
+  showHiddenMessage.value = true
+}
 </script>
 
 <template>
@@ -78,6 +84,13 @@ function onBackToRead() {
     <main class="ep__article">
       <ArticleLive :article="ARTICLE" @edit-click="openVE" />
     </main>
+
+    <Transition name="ep-toast">
+      <div v-if="showHiddenMessage" class="ep__toast" role="status">
+        Event recommendations turned off. Turn them back on through your
+        <a href="#" class="ep__toast-link">preferences</a>.
+      </div>
+    </Transition>
 
     <!-- Bottom sheet -->
     <Transition name="ep-sheet">
@@ -92,9 +105,11 @@ function onBackToRead() {
           <p class="ep__sheet-body">
             This article will be improved as part of the <strong>Women in Rock Editathon</strong>. Join this event to help make an impact and connect with other editors.
           </p>
-          <p class="ep__sheet-note">To stop seeing this message, update your <a href="#" class="ep__sheet-link">preferences</a>.</p>
           <CdxButton weight="primary" action="progressive" class="ep__sheet-cta" @click="router.push('/event-promotion/event-page')">
             Visit event page
+          </CdxButton>
+          <CdxButton weight="quiet" class="ep__sheet-dismiss" @click="onDontShowAgain">
+            Don't show this again
           </CdxButton>
         </div>
       </div>
@@ -356,24 +371,54 @@ function onBackToRead() {
   color: var(--color-base);
 }
 
-.ep__sheet-note {
-  margin: 0;
-  margin-top: 12px;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-small);
-  color: var(--color-subtle);
-}
-
-.ep__sheet-link {
-  color: var(--color-progressive);
-}
-
 .ep__sheet-cta {
   width: 100%;
   justify-content: center;
   margin-top: var(--spacing-75);
+}
+
+.ep__sheet-dismiss {
+  width: 100%;
+  justify-content: center;
+  margin-top: var(--spacing-50);
+}
+
+.ep__toast {
+  position: fixed;
+  left: var(--spacing-100);
+  right: var(--spacing-100);
+  bottom: calc(var(--spacing-100) + env(safe-area-inset-bottom, 0px));
+  z-index: 110;
+  box-sizing: border-box;
+  padding: var(--spacing-100);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-inverse, #202122);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-inverted, #fff);
+  text-align: center;
+}
+
+.ep__toast-link {
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.ep__toast-link:hover {
+  text-decoration: underline;
+}
+
+.ep-toast-enter-active,
+.ep-toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.ep-toast-enter-from,
+.ep-toast-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .ep-sheet-enter-active {

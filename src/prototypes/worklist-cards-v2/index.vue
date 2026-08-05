@@ -17,9 +17,11 @@ import {
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
+  cdxIconEdit,
   cdxIconEllipsis,
   cdxIconHistory,
   cdxIconLightbulb,
+  cdxIconTrash,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
@@ -95,7 +97,7 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
     const data = await res.json()
     return {
       title: data.title ?? title,
-      description: data.extract ?? '',
+      description: data.description?.trim() || '',
       url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
       viewsPerMonth: fakeViews(index),
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
@@ -172,12 +174,13 @@ function cardMenuItems(card: ArticleCard): MenuItemData[] {
 
   if (!card.note) {
     items.push({ value: 'add-note', label: 'Add a note' })
-  } else if (card.note.author === CURRENT_USERNAME) {
-    items.push({ value: 'edit-note', label: 'Edit note' })
-    items.push({ value: 'remove-note', label: 'Remove note' })
   }
 
   return items
+}
+
+function canEditNote(card: ArticleCard): boolean {
+  return card.note?.author === CURRENT_USERNAME
 }
 
 function canShowCardMenu(card: ArticleCard): boolean {
@@ -271,10 +274,6 @@ function onCardMenuAction(card: ArticleCard, action: string | null) {
     card.claimedBy = null
   } else if (action === 'add-note') {
     openNoteDialog(card, 'add')
-  } else if (action === 'edit-note') {
-    openNoteDialog(card, 'edit')
-  } else if (action === 'remove-note') {
-    removeNote(card)
   }
 }
 
@@ -566,7 +565,27 @@ onMounted(async () => {
                   </div>
 
                   <div v-if="card.note" class="wc2__card-note">
-                    <p class="wc2__card-note-label">Note</p>
+                    <div class="wc2__card-note-header">
+                      <p class="wc2__card-note-label">Note</p>
+                      <div v-if="canEditNote(card)" class="wc2__card-note-actions">
+                        <CdxButton
+                          weight="quiet"
+                          :icon-only="true"
+                          aria-label="Edit note"
+                          @click="openNoteDialog(card, 'edit')"
+                        >
+                          <CdxIcon :icon="cdxIconEdit" />
+                        </CdxButton>
+                        <CdxButton
+                          weight="quiet"
+                          :icon-only="true"
+                          aria-label="Remove note"
+                          @click="removeNote(card)"
+                        >
+                          <CdxIcon :icon="cdxIconTrash" />
+                        </CdxButton>
+                      </div>
+                    </div>
                     <p class="wc2__card-note-text" v-html="linkifyNote(card.note.text)" />
                     <p class="wc2__card-note-meta">
                       {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
@@ -646,19 +665,18 @@ onMounted(async () => {
   <CdxDialog
     v-model:open="showNoteDialog"
     :title="noteDialogTitle"
+    subtitle="Notes are public and visible to everyone on this worklist."
     close-button-label="Close"
     :dismissable="true"
     :primary-action="notePrimaryAction"
     @primary="onNoteSave"
   >
-    <CdxField>
-      <CdxTextArea
-        v-model="noteDraft"
-        :rows="4"
-        placeholder="What do you want to work on only."
-        class="wc2__note-textarea"
-      />
-    </CdxField>
+    <CdxTextArea
+      v-model="noteDraft"
+      :rows="4"
+      placeholder="What should others know about working on this article?"
+      class="wc2__note-textarea"
+    />
   </CdxDialog>
 </template>
 
@@ -757,6 +775,7 @@ onMounted(async () => {
   flex-direction: column;
   gap: var(--spacing-50);
   padding: var(--spacing-75) var(--spacing-100);
+  min-width: 0;
 }
 
 .wc2__card-header {
@@ -800,13 +819,31 @@ onMounted(async () => {
 }
 
 .wc2__card-note {
-  padding: var(--spacing-50) var(--spacing-75);
+  padding: var(--spacing-75);
   border-radius: var(--border-radius-base);
-  background-color: var(--background-color-notice-subtle);
+  background-color: var(--background-color-option-yellow, #fdf2d5);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.wc2__card-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-50);
+  margin-bottom: var(--spacing-25);
+}
+
+.wc2__card-note-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 0;
 }
 
 .wc2__card-note-label {
-  margin: 0 0 var(--spacing-25);
+  margin: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-bold);
@@ -821,11 +858,15 @@ onMounted(async () => {
   font-weight: var(--font-weight-normal);
   line-height: var(--line-height-small);
   color: var(--color-base);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .wc2__card-note-text :deep(.wc2__card-note-link) {
   color: var(--color-progressive);
   text-decoration: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .wc2__card-note-text :deep(.wc2__card-note-link:hover) {
@@ -833,7 +874,7 @@ onMounted(async () => {
 }
 
 .wc2__card-note-meta {
-  margin: var(--spacing-25) 0 0;
+  margin: var(--spacing-50) 0 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-normal);
