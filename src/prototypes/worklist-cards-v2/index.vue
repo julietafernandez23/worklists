@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { CdxIcon, CdxMenuButton, CdxTab, CdxTabs } from '@wikimedia/codex'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
+  CdxButton,
+  CdxDialog,
+  CdxField,
+  CdxIcon,
+  CdxLookup,
+  CdxMenuButton,
+  CdxTab,
+  CdxTabs,
+  CdxTextArea,
+} from '@wikimedia/codex'
+import type { MenuItemData } from '@wikimedia/codex'
+import {
+  cdxIconAdd,
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
   cdxIconEllipsis,
+  cdxIconHistory,
   cdxIconLightbulb,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
@@ -21,15 +34,24 @@ definePage({
 
 type Quality = 'low' | 'medium' | 'high'
 
+interface ArticleNote {
+  text: string
+  author: string
+  addedAt: Date
+}
+
 interface ArticleCard {
   title: string
   description: string
-  thumbnail: string | null
   url: string
   viewsPerMonth: string
   quality: Quality
   suggestions: string[]
+  claimedBy: string | null
+  note: ArticleNote | null
 }
+
+const CURRENT_USERNAME = 'LittleBird'
 
 const QUALITY_CYCLE: Quality[] = ['medium', 'high', 'low', 'high', 'medium', 'low', 'high']
 
@@ -64,47 +86,319 @@ function qualityLabel(quality: Quality): string {
   return `${quality.charAt(0).toUpperCase()}${quality.slice(1)} quality`
 }
 
+async function fetchArticleCard(title: string, index: number): Promise<ArticleCard> {
+  const wikiTitle = title.replace(/ /g, '_')
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`,
+    )
+    const data = await res.json()
+    return {
+      title: data.title ?? title,
+      description: data.extract ?? '',
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+      viewsPerMonth: fakeViews(index),
+      quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
+      suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+      claimedBy: null,
+      note: null,
+    }
+  } catch {
+    return {
+      title,
+      description: '',
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+      viewsPerMonth: fakeViews(index),
+      quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
+      suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+      claimedBy: null,
+      note: null,
+    }
+  }
+}
+
+const REDLINK_PREFIX = '__redlink__:'
+
 const cards = ref<ArticleCard[]>([])
 const loading = ref(true)
 const activeTab = ref('worklist')
 const titleMenuAction = ref<string | null>(null)
+const showAddDialog = ref(false)
+const addPending = ref(false)
+
+const lookupInput = ref('')
+const lookupSelected = ref<string | null>(null)
+const lookupMenuItems = ref<MenuItemData[]>([])
+const lookupPending = ref(false)
+const lookupIsRedLink = ref(false)
+const selectedPages = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const importFileName = ref<string | null>(null)
+const importFileError = ref<string | null>(null)
+
+const showNoteDialog = ref(false)
+const noteDialogCard = ref<ArticleCard | null>(null)
+const noteDialogMode = ref<'add' | 'edit'>('add')
+const noteDraft = ref('')
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(lookupSelected, (val) => {
+  if (!val) return
+  let title = val
+  if (title.startsWith(REDLINK_PREFIX)) {
+    title = title.slice(REDLINK_PREFIX.length)
+  }
+  const current = selectedPages.value.trim()
+  selectedPages.value = current ? `${current}\n${title}` : title
+  lookupSelected.value = null
+  lookupInput.value = ''
+  lookupMenuItems.value = []
+  lookupIsRedLink.value = false
+})
 
 const TITLE_MENU_ITEMS = [
   { value: 'export-collections', label: 'Export to Collections' },
 ]
 
-onMounted(async () => {
-  const results = await Promise.all(
-    ARTICLES.map(async (title, index) => {
-      const wikiTitle = title.replace(/ /g, '_')
-      try {
-        const res = await fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`,
-        )
-        const data = await res.json()
-        return {
-          title: data.title ?? title,
-          description: data.extract ?? '',
-          thumbnail: data.thumbnail?.source ?? null,
-          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-          viewsPerMonth: fakeViews(index),
-          quality: QUALITY_CYCLE[index],
-          suggestions: SUGGESTION_SETS[index],
-        } satisfies ArticleCard
-      } catch {
-        return {
-          title,
-          description: '',
-          thumbnail: null,
-          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-          viewsPerMonth: fakeViews(index),
-          quality: QUALITY_CYCLE[index],
-          suggestions: SUGGESTION_SETS[index],
-        }
-      }
-    }),
+function cardMenuItems(card: ArticleCard): MenuItemData[] {
+  const items: MenuItemData[] = []
+
+  if (!card.claimedBy) {
+    items.push({ value: 'claim', label: 'Claim article' })
+  } else if (card.claimedBy === CURRENT_USERNAME) {
+    items.push({ value: 'unclaim', label: 'Unclaim article' })
+  }
+
+  if (!card.note) {
+    items.push({ value: 'add-note', label: 'Add a note' })
+  } else if (card.note.author === CURRENT_USERNAME) {
+    items.push({ value: 'edit-note', label: 'Edit note' })
+    items.push({ value: 'remove-note', label: 'Remove note' })
+  }
+
+  return items
+}
+
+function canShowCardMenu(card: ArticleCard): boolean {
+  return cardMenuItems(card).length > 0
+}
+
+function formatNoteTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime()
+  if (diffMs < 60_000) return 'just now'
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  return date.toLocaleDateString()
+}
+
+function openNoteDialog(card: ArticleCard, mode: 'add' | 'edit') {
+  noteDialogCard.value = card
+  noteDialogMode.value = mode
+  noteDraft.value = mode === 'edit' && card.note ? card.note.text : ''
+  showNoteDialog.value = true
+}
+
+function onNoteSave() {
+  const text = noteDraft.value.trim()
+  if (!text || !noteDialogCard.value) return
+
+  noteDialogCard.value.note = {
+    text,
+    author: CURRENT_USERNAME,
+    addedAt: new Date(),
+  }
+  showNoteDialog.value = false
+  noteDialogCard.value = null
+  noteDraft.value = ''
+}
+
+function removeNote(card: ArticleCard) {
+  if (card.note?.author === CURRENT_USERNAME) {
+    card.note = null
+  }
+}
+
+function onCardMenuAction(card: ArticleCard, action: string | null) {
+  if (action === 'claim' && !card.claimedBy) {
+    card.claimedBy = CURRENT_USERNAME
+  } else if (action === 'unclaim' && card.claimedBy === CURRENT_USERNAME) {
+    card.claimedBy = null
+  } else if (action === 'add-note') {
+    openNoteDialog(card, 'add')
+  } else if (action === 'edit-note') {
+    openNoteDialog(card, 'edit')
+  } else if (action === 'remove-note') {
+    removeNote(card)
+  }
+}
+
+const WORKLIST_HISTORY_URL =
+  'https://en.wikipedia.org/w/index.php?title=Wikipedia:Wiki_Loves_Earth_2026/Worklist&action=history'
+
+function openWorklistHistory() {
+  window.open(WORKLIST_HISTORY_URL, '_blank', 'noopener,noreferrer')
+}
+
+async function searchArticles(query: string) {
+  if (!query.trim()) {
+    lookupMenuItems.value = []
+    return
+  }
+  lookupPending.value = true
+  try {
+    const params = new URLSearchParams({
+      action: 'opensearch',
+      search: query,
+      limit: '10',
+      format: 'json',
+      origin: '*',
+    })
+    const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`)
+    const [, titles] = (await res.json()) as [string, string[]]
+    if (titles.length > 0) {
+      lookupIsRedLink.value = false
+      lookupMenuItems.value = titles.map((t) => ({ value: t, label: t }))
+    } else {
+      lookupMenuItems.value = [
+        {
+          value: `${REDLINK_PREFIX}${query.trim()}`,
+          label: query.trim(),
+        },
+      ]
+      lookupIsRedLink.value = true
+    }
+  } catch {
+    lookupMenuItems.value = []
+  } finally {
+    lookupPending.value = false
+  }
+}
+
+function onLookupInput(value: string) {
+  lookupInput.value = value
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => searchArticles(value), 300)
+}
+
+function openAddDialog() {
+  selectedPages.value = ''
+  lookupInput.value = ''
+  lookupSelected.value = null
+  lookupMenuItems.value = []
+  lookupIsRedLink.value = false
+  importFileName.value = null
+  importFileError.value = null
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
+  showAddDialog.value = true
+}
+
+function openFilePicker() {
+  importFileError.value = null
+  fileInputRef.value?.click()
+}
+
+function parseCsvTitles(text: string): string[] {
+  const titles: string[] = []
+  for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const cell = trimmed.split(/,|\t|;/)[0]?.trim() ?? ''
+    if (!cell) continue
+    if (!titles.length && /^(title|article|page|name)$/i.test(cell)) continue
+    titles.push(cell)
+  }
+  return titles
+}
+
+async function extractTitlesFromFile(file: File): Promise<string[]> {
+  return parseCsvTitles(await file.text())
+}
+
+function appendTitlesToSelection(titles: string[]) {
+  const merged = [
+    ...selectedPages.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    ...titles,
+  ]
+  const seen = new Set<string>()
+  selectedPages.value = merged
+    .filter((title) => {
+      const key = title.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join('\n')
+}
+
+async function onImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  importFileName.value = file.name
+  importFileError.value = null
+
+  try {
+    const titles = await extractTitlesFromFile(file)
+    if (!titles.length) {
+      importFileError.value = 'No article titles found in this file.'
+      return
+    }
+    appendTitlesToSelection(titles)
+  } catch {
+    importFileError.value = 'Could not read this file.'
+  }
+}
+
+async function onAdd() {
+  const lines = selectedPages.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const existingTitles = new Set(cards.value.map((card) => card.title.toLowerCase()))
+  const newTitles = lines.filter((title) => !existingTitles.has(title.toLowerCase()))
+
+  if (!newTitles.length) {
+    showAddDialog.value = false
+    return
+  }
+
+  addPending.value = true
+  const startIndex = cards.value.length
+  const added = await Promise.all(
+    newTitles.map((title, offset) => fetchArticleCard(title, startIndex + offset)),
   )
-  cards.value = results
+  cards.value = [...cards.value, ...added]
+  addPending.value = false
+  showAddDialog.value = false
+}
+
+const canAdd = computed(() => selectedPages.value.trim().length > 0)
+
+const addPrimaryAction = computed(() => ({
+  label: 'Add',
+  actionType: 'progressive' as const,
+  disabled: !canAdd.value || addPending.value,
+}))
+
+const canSaveNote = computed(() => noteDraft.value.trim().length > 0)
+
+const notePrimaryAction = computed(() => ({
+  label: 'Save',
+  actionType: 'progressive' as const,
+  disabled: !canSaveNote.value,
+}))
+
+const noteDialogTitle = computed(() =>
+  noteDialogMode.value === 'edit' ? 'Edit note' : 'Add a note',
+)
+
+onMounted(async () => {
+  cards.value = await Promise.all(
+    ARTICLES.map((title, index) => fetchArticleCard(title, index)),
+  )
   loading.value = false
 })
 </script>
@@ -135,15 +429,60 @@ onMounted(async () => {
           <div class="wc2__page">
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
-            <ul v-else class="wc2__list" role="list">
+            <template v-else>
+              <div class="wc2__toolbar">
+                <CdxButton weight="normal" action="default">
+                  Visit worklist page
+                </CdxButton>
+                <CdxButton
+                  weight="normal"
+                  action="default"
+                  :icon-only="true"
+                  aria-label="Page history"
+                  @click="openWorklistHistory"
+                >
+                  <CdxIcon :icon="cdxIconHistory" />
+                </CdxButton>
+                <CdxButton
+                  weight="primary"
+                  action="progressive"
+                  :icon-only="true"
+                  aria-label="Add article"
+                  @click="openAddDialog"
+                >
+                  <CdxIcon :icon="cdxIconAdd" />
+                </CdxButton>
+              </div>
+
+              <ul class="wc2__list" role="list">
               <li v-for="card in cards" :key="card.title" class="wc2__card">
-                <div class="wc2__card-body">
-                  <a
-                    class="wc2__card-title"
-                    :href="card.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >{{ card.title }}</a>
+                <div
+                  v-if="card.claimedBy"
+                  class="wc2__card-claim-banner"
+                >
+                  Article claimed by {{ card.claimedBy }}
+                </div>
+
+                <div class="wc2__card-content">
+                  <div class="wc2__card-header">
+                    <a
+                      class="wc2__card-title"
+                      :href="card.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ card.title }}</a>
+                    <CdxMenuButton
+                      v-if="canShowCardMenu(card)"
+                      :menu-items="cardMenuItems(card)"
+                      weight="quiet"
+                      aria-label="Article options"
+                      class="wc2__card-menu"
+                      @update:selected="(action) => onCardMenuAction(card, action)"
+                    >
+                      <CdxIcon :icon="cdxIconEllipsis" />
+                    </CdxMenuButton>
+                  </div>
+
                   <p class="wc2__card-description">{{ card.description }}</p>
 
                   <div class="wc2__card-signals">
@@ -182,23 +521,102 @@ onMounted(async () => {
                       <span class="wc2__signal-text wc2__signal-text--quality">{{ qualityLabel(card.quality) }}</span>
                     </div>
                   </div>
-                </div>
 
-                <div v-if="card.thumbnail" class="wc2__card-thumb-wrap">
-                  <img
-                    class="wc2__card-thumb"
-                    :src="card.thumbnail"
-                    :alt="card.title"
-                  />
+                  <div v-if="card.note" class="wc2__card-note">
+                    <p class="wc2__card-note-label">Note</p>
+                    <p class="wc2__card-note-text">{{ card.note.text }}</p>
+                    <p class="wc2__card-note-meta">
+                      {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
+                    </p>
+                  </div>
                 </div>
               </li>
-            </ul>
+              </ul>
+            </template>
           </div>
         </CdxTab>
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
       </CdxTabs>
     </SpecialPageWrapper>
   </ChromeWrapper>
+
+  <CdxDialog
+    v-model:open="showAddDialog"
+    title="Add to worklist"
+    close-button-label="Close"
+    :dismissable="true"
+    :primary-action="addPrimaryAction"
+    @primary="onAdd"
+  >
+    <div class="wc2__dialog-body">
+      <CdxField>
+        <template #label>Search Wikipedia</template>
+        <div :class="{ 'wc2__lookup--redlink': lookupIsRedLink }">
+          <CdxLookup
+            v-model:selected="lookupSelected"
+            v-model:input-value="lookupInput"
+            :menu-items="lookupMenuItems"
+            :loading="lookupPending"
+            placeholder="Search Wikipedia"
+            @input="onLookupInput"
+          />
+        </div>
+      </CdxField>
+
+      <div class="wc2__dialog-or">or</div>
+
+      <div class="wc2__dialog-group">
+        <CdxField>
+          <template #label>List pages</template>
+          <template #description>One title per line</template>
+          <CdxTextArea
+            v-model="selectedPages"
+            :rows="5"
+            :placeholder="'Earth\nMoon\nJupiter'"
+            class="wc2__pages-textarea"
+          />
+        </CdxField>
+
+        <CdxField>
+          <template #label>Import file</template>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept=".csv,.xls,.xlsx,text/csv"
+            class="wc2__file-input"
+            @change="onImportFile"
+          />
+          <CdxButton
+            class="wc2__import-button"
+            weight="normal"
+            @click="openFilePicker"
+          >
+            Choose file
+          </CdxButton>
+          <span v-if="importFileName" class="wc2__import-file-name">{{ importFileName }}</span>
+          <p v-if="importFileError" class="wc2__import-file-error">{{ importFileError }}</p>
+        </CdxField>
+      </div>
+    </div>
+  </CdxDialog>
+
+  <CdxDialog
+    v-model:open="showNoteDialog"
+    :title="noteDialogTitle"
+    close-button-label="Close"
+    :dismissable="true"
+    :primary-action="notePrimaryAction"
+    @primary="onNoteSave"
+  >
+    <CdxField>
+      <CdxTextArea
+        v-model="noteDraft"
+        :rows="4"
+        placeholder="What do you plan to work on?"
+        class="wc2__note-textarea"
+      />
+    </CdxField>
+  </CdxDialog>
 </template>
 
 <style scoped>
@@ -244,13 +662,21 @@ onMounted(async () => {
 }
 
 .wc2__page {
-  padding-top: var(--spacing-200);
+  padding-top: var(--spacing-100);
 }
 
 .wc2__loading {
   color: var(--color-subtle);
   font-size: var(--font-size-medium);
   padding: var(--spacing-100) 0;
+}
+
+.wc2__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--spacing-50);
+  margin-bottom: var(--spacing-100);
 }
 
 .wc2__list {
@@ -264,24 +690,47 @@ onMounted(async () => {
 
 .wc2__card {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-100);
-  padding: var(--spacing-75) var(--spacing-100);
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
   border: var(--border-width-base) solid var(--border-color-subtle);
   border-radius: var(--border-radius-base);
   background-color: var(--background-color-base);
 }
 
-.wc2__card-body {
-  flex: 1 1 0;
-  min-width: 0;
+.wc2__card-claim-banner {
+  padding: var(--spacing-50) var(--spacing-100);
+  background-color: var(--background-color-notice-subtle);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+}
+
+.wc2__card-content {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-50);
+  padding: var(--spacing-75) var(--spacing-100);
+}
+
+.wc2__card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-50);
+}
+
+.wc2__card-menu {
+  flex-shrink: 0;
+  margin: -2px -4px 0 0;
 }
 
 .wc2__card-title {
+  flex: 1 1 0;
+  min-width: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
   font-weight: var(--font-weight-bold);
@@ -305,6 +754,39 @@ onMounted(async () => {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.wc2__card-note {
+  padding: var(--spacing-50) var(--spacing-75);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-notice-subtle);
+}
+
+.wc2__card-note-label {
+  margin: 0 0 var(--spacing-25);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-small);
+  color: var(--color-base);
+}
+
+.wc2__card-note-text {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+  color: var(--color-base);
+}
+
+.wc2__card-note-meta {
+  margin: var(--spacing-25) 0 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+  color: var(--color-subtle);
 }
 
 .wc2__card-signals {
@@ -390,19 +872,86 @@ onMounted(async () => {
   color: var(--color-destructive);
 }
 
-.wc2__card-thumb-wrap {
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--border-radius-base);
-  overflow: hidden;
-  background-color: var(--background-color-neutral);
+.wc2__dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
 }
 
-.wc2__card-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.wc2__dialog-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+}
+
+.wc2__dialog-or + * {
+  margin-top: calc(-1 * var(--spacing-50));
+}
+
+.wc2__dialog-or {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-75);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  color: var(--color-subtle);
+}
+
+.wc2__dialog-or::before,
+.wc2__dialog-or::after {
+  content: '';
+  flex: 1;
+  border-top: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.wc2__pages-textarea :deep(textarea) {
+  resize: vertical;
+}
+
+.wc2__note-textarea :deep(textarea) {
+  resize: vertical;
+}
+
+.wc2__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wc2__import-button {
   display: block;
+  width: 100%;
+}
+
+.wc2__import-button:deep(.cdx-button) {
+  width: 100%;
+  max-width: none;
+}
+
+.wc2__import-file-name {
+  display: block;
+  margin-top: var(--spacing-50);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-subtle);
+}
+
+.wc2__import-file-error {
+  margin: var(--spacing-50) 0 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-destructive);
+}
+
+.wc2__lookup--redlink :deep(.cdx-menu-item__text__label) {
+  color: var(--color-destructive, #d73333);
 }
 </style>
