@@ -124,7 +124,6 @@ const REDLINK_PREFIX = '__redlink__:'
 const cards = ref<ArticleCard[]>([])
 const loading = ref(true)
 const activeTab = ref('worklist')
-const titleMenuAction = ref<string | null>(null)
 const showAddDialog = ref(false)
 const addPending = ref(false)
 
@@ -158,10 +157,6 @@ watch(lookupSelected, (val) => {
   lookupMenuItems.value = []
   lookupIsRedLink.value = false
 })
-
-const TITLE_MENU_ITEMS = [
-  { value: 'export-collections', label: 'Export to Collections' },
-]
 
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
   const items: MenuItemData[] = []
@@ -449,20 +444,9 @@ onMounted(async () => {
   <ChromeWrapper :last-edited-notice="false" skin="mobile">
     <SpecialPageWrapper :title="null" class="wc2__special-page" skin="mobile">
       <template #header>
-        <div class="wc2__page-title">
-          <h1 class="wc2__page-title-text">
-            Event details: Wiki Loves Earth 2026
-          </h1>
-          <CdxMenuButton
-            v-model:selected="titleMenuAction"
-            :menu-items="TITLE_MENU_ITEMS"
-            weight="quiet"
-            aria-label="More options"
-            class="wc2__page-title-menu"
-          >
-            <CdxIcon :icon="cdxIconEllipsis" />
-          </CdxMenuButton>
-        </div>
+        <h1 class="wc2__page-title-text">
+          Event details: Wiki Loves Earth 2026
+        </h1>
       </template>
       <CdxTabs v-model:active="activeTab" class="wc2__tabs">
         <CdxTab name="details" label="Event details" :disabled="true" />
@@ -506,7 +490,7 @@ onMounted(async () => {
                 </div>
 
                 <div class="wc2__card-content">
-                  <div class="wc2__card-header">
+                  <div class="wc2__card-top">
                     <a
                       class="wc2__card-title"
                       :href="card.url"
@@ -523,9 +507,8 @@ onMounted(async () => {
                     >
                       <CdxIcon :icon="cdxIconEllipsis" />
                     </CdxMenuButton>
+                    <p class="wc2__card-description">{{ card.description }}</p>
                   </div>
-
-                  <p class="wc2__card-description">{{ card.description }}</p>
 
                   <div class="wc2__card-signals">
                     <div class="wc2__signal">
@@ -691,17 +674,8 @@ onMounted(async () => {
   width: 100%;
 }
 
-.wc2__page-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-50);
-  width: 100%;
-  min-width: 0;
-}
-
 .wc2__page-title-text {
-  flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -711,11 +685,6 @@ onMounted(async () => {
   font-weight: var(--font-weight-bold);
   line-height: var(--line-height-xx-large);
   color: var(--color-base);
-}
-
-.wc2__page-title-menu {
-  flex-shrink: 0;
-  margin-top: 2px;
 }
 
 .wc2__tabs {
@@ -773,25 +742,29 @@ onMounted(async () => {
 .wc2__card-content {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-50);
+  gap: var(--spacing-25);
   padding: var(--spacing-75) var(--spacing-100);
   min-width: 0;
 }
 
-.wc2__card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-50);
+.wc2__card-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: var(--spacing-50);
+  row-gap: var(--spacing-25);
 }
 
 .wc2__card-menu {
+  grid-column: 2;
+  grid-row: 1;
   flex-shrink: 0;
+  align-self: start;
   margin: -2px -4px 0 0;
 }
 
 .wc2__card-title {
-  flex: 1 1 0;
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
@@ -806,6 +779,8 @@ onMounted(async () => {
 }
 
 .wc2__card-description {
+  grid-column: 1 / -1;
+  grid-row: 2;
   margin: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
@@ -886,7 +861,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-50);
-  margin-top: var(--spacing-25);
 }
 
 .wc2__signal {
