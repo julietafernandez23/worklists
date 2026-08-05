@@ -194,6 +194,49 @@ function formatNoteTime(date: Date): string {
   return date.toLocaleDateString()
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function noteLink(label: string, url: string): string {
+  return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="wc2__card-note-link">${label}</a>`
+}
+
+function linkifyNote(text: string): string {
+  const links: string[] = []
+  let html = escapeHtml(text)
+
+  html = html.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_, label, url) => {
+      const token = `__NOTE_LINK_${links.length}__`
+      links.push(noteLink(label, url))
+      return token
+    },
+  )
+
+  html = html.replace(
+    /(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g,
+    (url) => {
+      const token = `__NOTE_LINK_${links.length}__`
+      links.push(noteLink(url, url))
+      return token
+    },
+  )
+
+  html = html.replace(/\n/g, '<br>')
+
+  links.forEach((link, index) => {
+    html = html.replace(`__NOTE_LINK_${index}__`, link)
+  })
+
+  return html
+}
+
 function openNoteDialog(card: ArticleCard, mode: 'add' | 'edit') {
   noteDialogCard.value = card
   noteDialogMode.value = mode
@@ -524,7 +567,7 @@ onMounted(async () => {
 
                   <div v-if="card.note" class="wc2__card-note">
                     <p class="wc2__card-note-label">Note</p>
-                    <p class="wc2__card-note-text">{{ card.note.text }}</p>
+                    <p class="wc2__card-note-text" v-html="linkifyNote(card.note.text)" />
                     <p class="wc2__card-note-meta">
                       {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
                     </p>
@@ -612,7 +655,7 @@ onMounted(async () => {
       <CdxTextArea
         v-model="noteDraft"
         :rows="4"
-        placeholder="What do you plan to work on?"
+        placeholder="What do you want to work on only."
         class="wc2__note-textarea"
       />
     </CdxField>
@@ -778,6 +821,15 @@ onMounted(async () => {
   font-weight: var(--font-weight-normal);
   line-height: var(--line-height-small);
   color: var(--color-base);
+}
+
+.wc2__card-note-text :deep(.wc2__card-note-link) {
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.wc2__card-note-text :deep(.wc2__card-note-link:hover) {
+  text-decoration: underline;
 }
 
 .wc2__card-note-meta {
