@@ -142,6 +142,9 @@ const noteDialogCard = ref<ArticleCard | null>(null)
 const noteDialogMode = ref<'add' | 'edit'>('add')
 const noteDraft = ref('')
 
+const showRemoveDialog = ref(false)
+const pendingRemoveTitle = ref<string | null>(null)
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(lookupSelected, (val) => {
@@ -159,7 +162,7 @@ watch(lookupSelected, (val) => {
 })
 
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
-  const items: MenuItemData[] = []
+  const items: MenuItemData[] = [{ value: 'remove', label: 'Remove' }]
 
   if (!card.claimedBy) {
     items.push({ value: 'claim', label: 'Claim article' })
@@ -176,10 +179,6 @@ function cardMenuItems(card: ArticleCard): MenuItemData[] {
 
 function canEditNote(card: ArticleCard): boolean {
   return card.note?.author === CURRENT_USERNAME
-}
-
-function canShowCardMenu(card: ArticleCard): boolean {
-  return cardMenuItems(card).length > 0
 }
 
 function formatNoteTime(date: Date): string {
@@ -262,6 +261,23 @@ function removeNote(card: ArticleCard) {
   }
 }
 
+function confirmRemove(title: string) {
+  pendingRemoveTitle.value = title
+  showRemoveDialog.value = true
+}
+
+function onRemoveConfirmed() {
+  if (!pendingRemoveTitle.value) return
+  cards.value = cards.value.filter((card) => card.title !== pendingRemoveTitle.value)
+  showRemoveDialog.value = false
+  pendingRemoveTitle.value = null
+}
+
+function onRemoveCancelled() {
+  showRemoveDialog.value = false
+  pendingRemoveTitle.value = null
+}
+
 function onCardMenuAction(card: ArticleCard, action: string | null) {
   if (action === 'claim' && !card.claimedBy) {
     card.claimedBy = CURRENT_USERNAME
@@ -269,6 +285,8 @@ function onCardMenuAction(card: ArticleCard, action: string | null) {
     card.claimedBy = null
   } else if (action === 'add-note') {
     openNoteDialog(card, 'add')
+  } else if (action === 'remove') {
+    confirmRemove(card.title)
   }
 }
 
@@ -498,7 +516,6 @@ onMounted(async () => {
                       rel="noopener noreferrer"
                     >{{ card.title }}</a>
                     <CdxMenuButton
-                      v-if="canShowCardMenu(card)"
                       :menu-items="cardMenuItems(card)"
                       weight="quiet"
                       aria-label="Article options"
@@ -660,6 +677,19 @@ onMounted(async () => {
       placeholder="What should others know about working on this article?"
       class="wc2__note-textarea"
     />
+  </CdxDialog>
+
+  <CdxDialog
+    v-model:open="showRemoveDialog"
+    title="Remove article from worklist"
+    close-button-label="Cancel"
+    :dismissable="true"
+    :primary-action="{ label: 'Remove', actionType: 'destructive' }"
+    :default-action="{ label: 'Cancel' }"
+    @primary="onRemoveConfirmed"
+    @default="onRemoveCancelled"
+  >
+    <p class="wc2__remove-message">Are you sure you want to remove this article from the worklist?</p>
   </CdxDialog>
 </template>
 
@@ -979,6 +1009,10 @@ onMounted(async () => {
 
 .wc2__note-textarea :deep(textarea) {
   resize: vertical;
+}
+
+.wc2__remove-message {
+  margin: 0;
 }
 
 .wc2__file-input {
