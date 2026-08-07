@@ -17,9 +17,11 @@ import {
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
+  cdxIconClose,
   cdxIconEdit,
   cdxIconEllipsis,
   cdxIconHistory,
+  cdxIconInfo,
   cdxIconLightbulb,
   cdxIconTrash,
 } from '@wikimedia/codex-icons'
@@ -144,6 +146,8 @@ const noteDraft = ref('')
 
 const showRemoveDialog = ref(false)
 const pendingRemoveTitle = ref<string | null>(null)
+
+const showQualityHelpSheet = ref(false)
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -544,7 +548,7 @@ onMounted(async () => {
                     </div>
 
                     <div
-                      class="wc2__signal"
+                      class="wc2__signal wc2__signal--quality"
                       :class="`wc2__signal--${card.quality}`"
                     >
                       <CdxIcon
@@ -561,6 +565,16 @@ onMounted(async () => {
                       />
                       <span v-else class="wc2__signal-icon wc2__signal-icon--medium" aria-hidden="true">—</span>
                       <span class="wc2__signal-text wc2__signal-text--quality">{{ qualityLabel(card.quality) }}</span>
+                      <CdxButton
+                        weight="quiet"
+                        :icon-only="true"
+                        size="small"
+                        aria-label="What is article quality?"
+                        class="wc2__quality-help"
+                        @click="showQualityHelpSheet = true"
+                      >
+                        <CdxIcon :icon="cdxIconInfo" size="small" />
+                      </CdxButton>
                     </div>
                   </div>
 
@@ -600,6 +614,31 @@ onMounted(async () => {
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
       </CdxTabs>
     </SpecialPageWrapper>
+
+    <Transition name="wc2-sheet">
+      <div
+        v-if="showQualityHelpSheet"
+        class="wc2__sheet-backdrop"
+        @click.self="showQualityHelpSheet = false"
+      >
+        <div class="wc2__sheet">
+          <div class="wc2__sheet-header">
+            <p class="wc2__sheet-title">What is this?</p>
+            <CdxButton
+              weight="quiet"
+              :icon-only="true"
+              aria-label="Close"
+              @click="showQualityHelpSheet = false"
+            >
+              <CdxIcon :icon="cdxIconClose" />
+            </CdxButton>
+          </div>
+          <p class="wc2__sheet-body">
+            Article quality is an automatic estimate of how complete the article's structure is. It looks at signals like article length, references, section headings, media, and categories.
+          </p>
+        </div>
+      </div>
+    </Transition>
   </ChromeWrapper>
 
   <CdxDialog
@@ -969,6 +1008,86 @@ onMounted(async () => {
 .wc2__signal--low .wc2__signal-icon,
 .wc2__signal--low .wc2__signal-text--quality {
   color: var(--color-destructive);
+}
+
+.wc2__signal--quality {
+  align-items: center;
+}
+
+.wc2__quality-help {
+  flex-shrink: 0;
+  margin: -2px 0 -2px calc(-1 * var(--spacing-25));
+  color: var(--color-subtle);
+}
+
+.wc2__sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+
+.wc2__sheet {
+  width: 100%;
+  background-color: var(--background-color-base);
+  padding: var(--spacing-100);
+}
+
+.wc2__sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-50);
+  margin-bottom: var(--spacing-75);
+}
+
+.wc2__sheet-title {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+}
+
+.wc2__sheet-body {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+  color: var(--color-base);
+}
+
+.wc2-sheet-enter-active {
+  transition: opacity 0.3s ease;
+}
+
+.wc2-sheet-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.wc2-sheet-enter-active .wc2__sheet {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wc2-sheet-leave-active .wc2__sheet {
+  transition: transform 0.25s cubic-bezier(0.55, 0, 1, 0.45);
+}
+
+.wc2-sheet-enter-from,
+.wc2-sheet-leave-to {
+  opacity: 0;
+}
+
+.wc2-sheet-enter-from .wc2__sheet {
+  transform: translateY(100%);
+}
+
+.wc2-sheet-leave-to .wc2__sheet {
+  transform: translateY(100%);
 }
 
 .wc2__dialog-body {
