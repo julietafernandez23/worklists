@@ -136,9 +136,6 @@ const lookupMenuItems = ref<MenuItemData[]>([])
 const lookupPending = ref(false)
 const lookupIsRedLink = ref(false)
 const selectedPages = ref('')
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const importFileName = ref<string | null>(null)
-const importFileError = ref<string | null>(null)
 
 const showNoteDialog = ref(false)
 const noteDialogCard = ref<ArticleCard | null>(null)
@@ -356,70 +353,7 @@ function openAddDialog() {
   lookupSelected.value = null
   lookupMenuItems.value = []
   lookupIsRedLink.value = false
-  importFileName.value = null
-  importFileError.value = null
-  if (fileInputRef.value) {
-    fileInputRef.value.value = ''
-  }
   showAddDialog.value = true
-}
-
-function openFilePicker() {
-  importFileError.value = null
-  fileInputRef.value?.click()
-}
-
-function parseCsvTitles(text: string): string[] {
-  const titles: string[] = []
-  for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const cell = trimmed.split(/,|\t|;/)[0]?.trim() ?? ''
-    if (!cell) continue
-    if (!titles.length && /^(title|article|page|name)$/i.test(cell)) continue
-    titles.push(cell)
-  }
-  return titles
-}
-
-async function extractTitlesFromFile(file: File): Promise<string[]> {
-  return parseCsvTitles(await file.text())
-}
-
-function appendTitlesToSelection(titles: string[]) {
-  const merged = [
-    ...selectedPages.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
-    ...titles,
-  ]
-  const seen = new Set<string>()
-  selectedPages.value = merged
-    .filter((title) => {
-      const key = title.toLowerCase()
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .join('\n')
-}
-
-async function onImportFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  importFileName.value = file.name
-  importFileError.value = null
-
-  try {
-    const titles = await extractTitlesFromFile(file)
-    if (!titles.length) {
-      importFileError.value = 'No article titles found in this file.'
-      return
-    }
-    appendTitlesToSelection(titles)
-  } catch {
-    importFileError.value = 'Could not read this file.'
-  }
 }
 
 async function onAdd() {
@@ -677,38 +611,16 @@ onMounted(async () => {
 
       <div class="wc2__dialog-or">or</div>
 
-      <div class="wc2__dialog-group">
-        <CdxField>
-          <template #label>List pages</template>
-          <template #description>One title per line</template>
-          <CdxTextArea
-            v-model="selectedPages"
-            :rows="5"
-            :placeholder="'Earth\nMoon\nJupiter'"
-            class="wc2__pages-textarea"
-          />
-        </CdxField>
-
-        <CdxField>
-          <template #label>Import file</template>
-          <input
-            ref="fileInputRef"
-            type="file"
-            accept=".csv,.xls,.xlsx,text/csv"
-            class="wc2__file-input"
-            @change="onImportFile"
-          />
-          <CdxButton
-            class="wc2__import-button"
-            weight="normal"
-            @click="openFilePicker"
-          >
-            Choose file
-          </CdxButton>
-          <span v-if="importFileName" class="wc2__import-file-name">{{ importFileName }}</span>
-          <p v-if="importFileError" class="wc2__import-file-error">{{ importFileError }}</p>
-        </CdxField>
-      </div>
+      <CdxField>
+        <template #label>List pages</template>
+        <template #description>One title per line</template>
+        <CdxTextArea
+          v-model="selectedPages"
+          :rows="5"
+          :placeholder="'Earth\nMoon\nJupiter'"
+          class="wc2__pages-textarea"
+        />
+      </CdxField>
     </div>
   </CdxDialog>
 
@@ -1150,12 +1062,6 @@ onMounted(async () => {
   gap: var(--spacing-75);
 }
 
-.wc2__dialog-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-50);
-}
-
 .wc2__dialog-or + * {
   margin-top: calc(-1 * var(--spacing-50));
 }
@@ -1186,45 +1092,6 @@ onMounted(async () => {
 
 .wc2__remove-message {
   margin: 0;
-}
-
-.wc2__file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.wc2__import-button {
-  display: block;
-  width: 100%;
-}
-
-.wc2__import-button:deep(.cdx-button) {
-  width: 100%;
-  max-width: none;
-}
-
-.wc2__import-file-name {
-  display: block;
-  margin-top: var(--spacing-50);
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
-  color: var(--color-subtle);
-}
-
-.wc2__import-file-error {
-  margin: var(--spacing-50) 0 0;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
-  color: var(--color-destructive);
 }
 
 .wc2__lookup--redlink :deep(.cdx-menu-item__text__label) {
