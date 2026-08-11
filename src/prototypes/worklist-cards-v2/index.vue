@@ -52,7 +52,6 @@ interface ArticleCard {
   viewsPerMonth: string
   quality: Quality
   suggestions: string[]
-  claimedBy: string | null
   note: ArticleNote | null
 }
 
@@ -105,7 +104,6 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       viewsPerMonth: fakeViews(index),
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
-      claimedBy: null,
       note: null,
     }
   } catch {
@@ -116,7 +114,6 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       viewsPerMonth: fakeViews(index),
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
-      claimedBy: null,
       note: null,
     }
   }
@@ -165,12 +162,6 @@ watch(lookupSelected, (val) => {
 
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
   const items: MenuItemData[] = [{ value: 'remove', label: 'Remove' }]
-
-  if (!card.claimedBy) {
-    items.push({ value: 'claim', label: 'Claim article' })
-  } else if (card.claimedBy === CURRENT_USERNAME) {
-    items.push({ value: 'unclaim', label: 'Unclaim article' })
-  }
 
   if (!card.note) {
     items.push({ value: 'add-note', label: 'Add a note' })
@@ -281,11 +272,7 @@ function onRemoveCancelled() {
 }
 
 function onCardMenuAction(card: ArticleCard, action: string | null) {
-  if (action === 'claim' && !card.claimedBy) {
-    card.claimedBy = CURRENT_USERNAME
-  } else if (action === 'unclaim' && card.claimedBy === CURRENT_USERNAME) {
-    card.claimedBy = null
-  } else if (action === 'add-note') {
+  if (action === 'add-note') {
     openNoteDialog(card, 'add')
   } else if (action === 'remove') {
     confirmRemove(card.title)
@@ -450,13 +437,6 @@ onMounted(async () => {
 
             <ul v-else class="wc2__list" role="list">
               <li v-for="card in cards" :key="card.title" class="wc2__card">
-                <div
-                  v-if="card.claimedBy"
-                  class="wc2__card-claim-banner"
-                >
-                  Article claimed by {{ card.claimedBy }}
-                </div>
-
                 <div class="wc2__card-content">
                   <div class="wc2__card-top">
                     <a
@@ -761,17 +741,6 @@ onMounted(async () => {
   border: var(--border-width-base) solid var(--border-color-subtle);
   border-radius: var(--border-radius-base);
   background-color: var(--background-color-base);
-}
-
-.wc2__card-claim-banner {
-  padding: var(--spacing-50) var(--spacing-100);
-  background-color: var(--background-color-notice-subtle);
-  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-medium);
-  color: var(--color-base);
 }
 
 .wc2__card-content {
