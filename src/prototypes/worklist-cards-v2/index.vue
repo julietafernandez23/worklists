@@ -16,6 +16,7 @@ import {
   cdxIconAdd,
   cdxIconArrowDown,
   cdxIconArrowUp,
+  cdxIconArticle,
   cdxIconChartLine,
   cdxIconClose,
   cdxIconEdit,
@@ -294,8 +295,15 @@ function onCardMenuAction(card: ArticleCard, action: string | null) {
   }
 }
 
+const WORKLIST_PAGE_URL =
+  'https://en.wikipedia.org/wiki/Wikipedia:Wiki_Loves_Earth_2026/Worklist'
+
 const WORKLIST_HISTORY_URL =
   'https://en.wikipedia.org/w/index.php?title=Wikipedia:Wiki_Loves_Earth_2026/Worklist&action=history'
+
+function openWorklistPage() {
+  window.open(WORKLIST_PAGE_URL, '_blank', 'noopener,noreferrer')
+}
 
 function openWorklistHistory() {
   window.open(WORKLIST_HISTORY_URL, '_blank', 'noopener,noreferrer')
@@ -474,35 +482,39 @@ onMounted(async () => {
         <CdxTab name="details" label="Event details" :disabled="true" />
         <CdxTab name="participants" label="Participants" :disabled="true" />
         <CdxTab name="worklist" label="Worklist">
+          <nav class="wc2__toolbar" aria-label="Worklist actions">
+            <div class="wc2__toolbar-icons">
+              <button
+                type="button"
+                class="wc2__toolbar-tool"
+                aria-label="Visit worklist page"
+                @click="openWorklistPage"
+              >
+                <CdxIcon :icon="cdxIconArticle" size="medium" />
+              </button>
+              <button
+                type="button"
+                class="wc2__toolbar-tool"
+                aria-label="Page history"
+                @click="openWorklistHistory"
+              >
+                <CdxIcon :icon="cdxIconHistory" size="medium" />
+              </button>
+              <button
+                type="button"
+                class="wc2__toolbar-tool"
+                aria-label="Add article"
+                @click="openAddDialog"
+              >
+                <CdxIcon :icon="cdxIconAdd" size="medium" />
+              </button>
+            </div>
+          </nav>
+
           <div class="wc2__page">
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
-            <template v-else>
-              <div class="wc2__toolbar">
-                <CdxButton weight="normal" action="default">
-                  Visit worklist page
-                </CdxButton>
-                <CdxButton
-                  weight="normal"
-                  action="default"
-                  :icon-only="true"
-                  aria-label="Page history"
-                  @click="openWorklistHistory"
-                >
-                  <CdxIcon :icon="cdxIconHistory" />
-                </CdxButton>
-                <CdxButton
-                  weight="primary"
-                  action="progressive"
-                  :icon-only="true"
-                  aria-label="Add article"
-                  @click="openAddDialog"
-                >
-                  <CdxIcon :icon="cdxIconAdd" />
-                </CdxButton>
-              </div>
-
-              <ul class="wc2__list" role="list">
+            <ul v-else class="wc2__list" role="list">
               <li v-for="card in cards" :key="card.title" class="wc2__card">
                 <div
                   v-if="card.claimedBy"
@@ -608,7 +620,6 @@ onMounted(async () => {
                 </div>
               </li>
               </ul>
-            </template>
           </div>
         </CdxTab>
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
@@ -760,8 +771,17 @@ onMounted(async () => {
   margin-bottom: var(--spacing-150);
 }
 
+.wc2__tabs:deep(.cdx-tabs__header) {
+  margin-bottom: 0;
+}
+
+.wc2__tabs:deep([role="tabpanel"]) {
+  padding: 0;
+  margin: 0;
+}
+
 .wc2__page {
-  padding-top: var(--spacing-100);
+  padding-top: 0;
 }
 
 .wc2__loading {
@@ -771,11 +791,41 @@ onMounted(async () => {
 }
 
 .wc2__toolbar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--spacing-50);
+  margin-top: var(--spacing-100);
   margin-bottom: var(--spacing-100);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.wc2__toolbar-icons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.wc2__toolbar-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--border-radius-base);
+  cursor: pointer;
+}
+
+.wc2__toolbar-tool :deep(.cdx-icon) {
+  color: var(--color-subtle);
+}
+
+.wc2__toolbar-tool:hover {
+  background-color: var(--background-color-button-quiet--hover);
+}
+
+.wc2__toolbar-tool:focus-visible {
+  outline: 2px solid var(--color-progressive);
+  outline-offset: -2px;
 }
 
 .wc2__list {
@@ -785,6 +835,10 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-75);
+}
+
+.wc2__list > li {
+  margin: 0;
 }
 
 .wc2__card {
