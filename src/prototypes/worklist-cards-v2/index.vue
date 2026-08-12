@@ -16,9 +16,9 @@ import {
   cdxIconAdd,
   cdxIconArrowDown,
   cdxIconArrowUp,
-  cdxIconArticle,
   cdxIconChartLine,
   cdxIconClose,
+  cdxIconCode,
   cdxIconEdit,
   cdxIconEllipsis,
   cdxIconHistory,
@@ -52,6 +52,7 @@ interface ArticleCard {
   viewsPerMonth: string
   quality: Quality
   suggestions: string[]
+  workingOn: string[]
   note: ArticleNote | null
 }
 
@@ -104,6 +105,7 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       viewsPerMonth: fakeViews(index),
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+      workingOn: index === 1 ? ['Sam'] : [],
       note: null,
     }
   } catch {
@@ -114,6 +116,7 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       viewsPerMonth: fakeViews(index),
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+      workingOn: index === 1 ? ['Sam'] : [],
       note: null,
     }
   }
@@ -163,11 +166,31 @@ watch(lookupSelected, (val) => {
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
   const items: MenuItemData[] = [{ value: 'remove', label: 'Remove' }]
 
+  if (isWorkingOn(card)) {
+    items.push({ value: 'stop-working', label: 'Stop working on this' })
+  } else {
+    items.push({ value: 'start-working', label: "I'm working on this" })
+  }
+
   if (!card.note) {
     items.push({ value: 'add-note', label: 'Add a note' })
   }
 
   return items
+}
+
+function isWorkingOn(card: ArticleCard): boolean {
+  return card.workingOn.includes(CURRENT_USERNAME)
+}
+
+function startWorkingOn(card: ArticleCard) {
+  if (!isWorkingOn(card)) {
+    card.workingOn = [...card.workingOn, CURRENT_USERNAME]
+  }
+}
+
+function stopWorkingOn(card: ArticleCard) {
+  card.workingOn = card.workingOn.filter((name) => name !== CURRENT_USERNAME)
 }
 
 function canEditNote(card: ArticleCard): boolean {
@@ -272,7 +295,11 @@ function onRemoveCancelled() {
 }
 
 function onCardMenuAction(card: ArticleCard, action: string | null) {
-  if (action === 'add-note') {
+  if (action === 'start-working') {
+    startWorkingOn(card)
+  } else if (action === 'stop-working') {
+    stopWorkingOn(card)
+  } else if (action === 'add-note') {
     openNoteDialog(card, 'add')
   } else if (action === 'remove') {
     confirmRemove(card.title)
@@ -404,39 +431,45 @@ onMounted(async () => {
         <CdxTab name="participants" label="Participants" :disabled="true" />
         <CdxTab name="worklist" label="Worklist">
           <nav class="wc2__toolbar" aria-label="Worklist actions">
-            <div class="wc2__toolbar-icons">
-              <button
-                type="button"
-                class="wc2__toolbar-tool"
-                aria-label="Visit worklist page"
-                @click="openWorklistPage"
-              >
-                <CdxIcon :icon="cdxIconArticle" size="medium" />
-              </button>
-              <button
-                type="button"
-                class="wc2__toolbar-tool"
-                aria-label="Page history"
-                @click="openWorklistHistory"
-              >
-                <CdxIcon :icon="cdxIconHistory" size="medium" />
-              </button>
-              <button
-                type="button"
-                class="wc2__toolbar-tool"
-                aria-label="Add article"
+            <div class="wc2__toolbar-row">
+              <CdxButton
+                class="wc2__toolbar-add"
+                action="progressive"
+                weight="normal"
                 @click="openAddDialog"
               >
-                <CdxIcon :icon="cdxIconAdd" size="medium" />
-              </button>
+                <CdxIcon :icon="cdxIconAdd" />
+                Add article
+              </CdxButton>
+              <CdxButton
+                class="wc2__toolbar-history"
+                weight="normal"
+                :icon-only="true"
+                aria-label="View history"
+                @click="openWorklistHistory"
+              >
+                <CdxIcon :icon="cdxIconHistory" />
+              </CdxButton>
             </div>
           </nav>
 
           <div class="wc2__page">
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
-            <ul v-else class="wc2__list" role="list">
+            <template v-else>
+              <ul class="wc2__list" role="list">
               <li v-for="card in cards" :key="card.title" class="wc2__card">
+                <div
+                  v-if="card.workingOn.length"
+                  class="wc2__card-working-banner"
+                >
+                  Working on this:
+                  <template v-for="(name, index) in card.workingOn" :key="name">
+                    <span v-if="index > 0">, </span>
+                    <span class="wc2__card-working-name">{{ name }}</span>
+                  </template>
+                </div>
+
                 <div class="wc2__card-content">
                   <div class="wc2__card-top">
                     <a
@@ -534,6 +567,16 @@ onMounted(async () => {
                 </div>
               </li>
               </ul>
+
+              <CdxButton
+                class="wc2__visit-page"
+                weight="normal"
+                @click="openWorklistPage"
+              >
+                <CdxIcon :icon="cdxIconCode" />
+                Visit worklist page
+              </CdxButton>
+            </template>
           </div>
         </CdxTab>
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
@@ -685,39 +728,41 @@ onMounted(async () => {
 .wc2__toolbar {
   margin-top: var(--spacing-100);
   margin-bottom: var(--spacing-100);
-  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
 }
 
-.wc2__toolbar-icons {
+.wc2__toolbar-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 14px;
-  padding-bottom: 14px;
+  gap: var(--spacing-50);
+  align-items: stretch;
 }
 
-.wc2__toolbar-tool {
-  display: inline-flex;
-  align-items: center;
+.wc2__toolbar-add:deep(.cdx-button),
+.wc2__visit-page:deep(.cdx-button) {
+  width: 100%;
   justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: var(--border-radius-base);
-  cursor: pointer;
+  gap: var(--spacing-50);
+  padding-inline: var(--spacing-75);
+  box-sizing: border-box;
 }
 
-.wc2__toolbar-tool :deep(.cdx-icon) {
-  color: var(--color-subtle);
+.wc2__toolbar-add:deep(.cdx-icon),
+.wc2__visit-page:deep(.cdx-icon) {
+  flex-shrink: 0;
 }
 
-.wc2__toolbar-tool:hover {
-  background-color: var(--background-color-button-quiet--hover);
+.wc2__toolbar-add {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.wc2__toolbar-tool:focus-visible {
-  outline: 2px solid var(--color-progressive);
-  outline-offset: -2px;
+.wc2__toolbar-history {
+  flex-shrink: 0;
+}
+
+.wc2__visit-page {
+  display: block;
+  width: 100%;
+  margin-top: var(--spacing-100);
 }
 
 .wc2__list {
@@ -741,6 +786,21 @@ onMounted(async () => {
   border: var(--border-width-base) solid var(--border-color-subtle);
   border-radius: var(--border-radius-base);
   background-color: var(--background-color-base);
+}
+
+.wc2__card-working-banner {
+  padding: var(--spacing-50) var(--spacing-100);
+  background-color: var(--background-color-notice-subtle);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+}
+
+.wc2__card-working-name {
+  color: var(--color-progressive);
 }
 
 .wc2__card-content {
