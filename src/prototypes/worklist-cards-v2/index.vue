@@ -7,6 +7,7 @@ import {
   CdxIcon,
   CdxLookup,
   CdxMenuButton,
+  CdxSelect,
   CdxTab,
   CdxTabs,
   CdxTextArea,
@@ -21,6 +22,7 @@ import {
   cdxIconCode,
   cdxIconEdit,
   cdxIconEllipsis,
+  cdxIconConfigure,
   cdxIconHistory,
   cdxIconInfo,
   cdxIconLightbulb,
@@ -50,6 +52,8 @@ interface ArticleCard {
   description: string
   url: string
   viewsPerMonth: string
+  viewsCount: number
+  order: number
   quality: Quality
   suggestions: string[]
   workingOn: string[]
@@ -70,6 +74,29 @@ const SUGGESTION_SETS = [
   ['Add a citation', 'Add a link'],
   ['Add a citation', 'Add a link'],
   ['Add a citation', 'Add a link'],
+]
+
+const SUGGESTION_FILTER_OPTIONS: MenuItemData[] = [
+  { value: 'all', label: 'All suggestions' },
+  { value: 'Add a citation', label: 'Add a citation' },
+  { value: 'Add a link', label: 'Add a link' },
+  { value: 'Remove duplicated link', label: 'Remove duplicated link' },
+  { value: 'Revise tone', label: 'Revise tone' },
+]
+
+const SORT_OPTIONS: MenuItemData[] = [
+  { value: 'default', label: 'Default order' },
+  { value: 'views-desc', label: 'Most views' },
+  { value: 'views-asc', label: 'Fewest views' },
+  { value: 'title-asc', label: 'Title A–Z' },
+  { value: 'title-desc', label: 'Title Z–A' },
+]
+
+const QUALITY_FILTER_OPTIONS: MenuItemData[] = [
+  { value: 'all', label: 'All quality' },
+  { value: 'high', label: 'High quality' },
+  { value: 'medium', label: 'Medium quality' },
+  { value: 'low', label: 'Low quality' },
 ]
 
 const ARTICLES = [
@@ -103,6 +130,8 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       description: data.description?.trim() || '',
       url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
       viewsPerMonth: fakeViews(index),
+      viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
+      order: index,
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
       workingOn: index === 1 ? ['Sam'] : [],
@@ -114,6 +143,8 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       description: '',
       url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
       viewsPerMonth: fakeViews(index),
+      viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
+      order: index,
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
       workingOn: index === 1 ? ['Sam'] : [],
@@ -127,6 +158,13 @@ const REDLINK_PREFIX = '__redlink__:'
 const cards = ref<ArticleCard[]>([])
 const loading = ref(true)
 const activeTab = ref('worklist')
+const sortBy = ref('default')
+const qualityFilter = ref('all')
+const suggestionFilter = ref('all')
+const showFilterDialog = ref(false)
+const draftSortBy = ref('default')
+const draftQualityFilter = ref('all')
+const draftSuggestionFilter = ref('all')
 const showAddDialog = ref(false)
 const addPending = ref(false)
 
@@ -410,6 +448,61 @@ const noteDialogTitle = computed(() =>
   noteDialogMode.value === 'edit' ? 'Edit note' : 'Add a note',
 )
 
+const hasActiveFilters = computed(
+  () =>
+    sortBy.value !== 'default'
+    || qualityFilter.value !== 'all'
+    || suggestionFilter.value !== 'all',
+)
+
+const filteredCards = computed(() => {
+  let result = cards.value.filter((card) => {
+    if (qualityFilter.value !== 'all' && card.quality !== qualityFilter.value) {
+      return false
+    }
+    if (
+      suggestionFilter.value !== 'all'
+      && !card.suggestions.includes(suggestionFilter.value)
+    ) {
+      return false
+    }
+    return true
+  })
+
+  switch (sortBy.value) {
+    case 'views-desc':
+      result = [...result].sort((a, b) => b.viewsCount - a.viewsCount)
+      break
+    case 'views-asc':
+      result = [...result].sort((a, b) => a.viewsCount - b.viewsCount)
+      break
+    case 'title-asc':
+      result = [...result].sort((a, b) => a.title.localeCompare(b.title))
+      break
+    case 'title-desc':
+      result = [...result].sort((a, b) => b.title.localeCompare(a.title))
+      break
+    default:
+      result = [...result].sort((a, b) => a.order - b.order)
+  }
+
+  return result
+})
+
+function openFilterDialog() {
+  draftSortBy.value = sortBy.value
+  draftQualityFilter.value = qualityFilter.value
+  draftSuggestionFilter.value = suggestionFilter.value
+  showFilterDialog.value = true
+}
+
+function applyFilters() {
+  sortBy.value = draftSortBy.value
+  qualityFilter.value = draftQualityFilter.value
+  suggestionFilter.value = draftSuggestionFilter.value
+  showFilterDialog.value = false
+}
+
 onMounted(async () => {
   cards.value = await Promise.all(
     ARTICLES.map((title, index) => fetchArticleCard(title, index)),
@@ -450,6 +543,16 @@ onMounted(async () => {
               >
                 <CdxIcon :icon="cdxIconHistory" />
               </CdxButton>
+              <CdxButton
+                class="wc2__toolbar-filter"
+                weight="normal"
+                :action="hasActiveFilters ? 'progressive' : 'default'"
+                :icon-only="true"
+                aria-label="Filter and sort articles"
+                @click="openFilterDialog"
+              >
+                <CdxIcon :icon="cdxIconConfigure" />
+              </CdxButton>
             </div>
           </nav>
 
@@ -457,8 +560,12 @@ onMounted(async () => {
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
             <template v-else>
-              <ul class="wc2__list" role="list">
-              <li v-for="card in cards" :key="card.title" class="wc2__card">
+              <p v-if="filteredCards.length === 0" class="wc2__filters-empty">
+                No articles match these filters.
+              </p>
+
+              <ul v-else class="wc2__list" role="list">
+              <li v-for="card in filteredCards" :key="card.title" class="wc2__card">
                 <div
                   v-if="card.workingOn.length"
                   class="wc2__card-working-banner"
@@ -501,7 +608,7 @@ onMounted(async () => {
                       <span class="wc2__signal-text wc2__signal-text--suggestions">
                         <template v-for="(suggestion, index) in card.suggestions" :key="suggestion">
                           <span v-if="index > 0" class="wc2__suggestion-sep">, </span>
-                          <button type="button" class="wc2__suggestion-link">{{ suggestion }}</button>
+                          <span class="wc2__suggestion-text">{{ suggestion }}</span>
                         </template>
                       </span>
                     </div>
@@ -569,6 +676,7 @@ onMounted(async () => {
               </ul>
 
               <CdxButton
+                v-if="filteredCards.length > 0"
                 class="wc2__visit-page"
                 weight="normal"
                 @click="openWorklistPage"
@@ -665,6 +773,54 @@ onMounted(async () => {
   </CdxDialog>
 
   <CdxDialog
+    v-model:open="showFilterDialog"
+    title="Filter"
+    close-button-label="Close"
+    class="wc2__filter-dialog-modal"
+    :dismissable="true"
+  >
+    <div class="wc2__filter-dialog">
+      <CdxField class="wc2__filter-dialog-field">
+        <template #label>Sort</template>
+        <CdxSelect
+          v-model:selected="draftSortBy"
+          :menu-items="SORT_OPTIONS"
+          default-label="Default order"
+        />
+      </CdxField>
+
+      <CdxField class="wc2__filter-dialog-field">
+        <template #label>Quality</template>
+        <CdxSelect
+          v-model:selected="draftQualityFilter"
+          :menu-items="QUALITY_FILTER_OPTIONS"
+          default-label="All quality"
+        />
+      </CdxField>
+
+      <CdxField class="wc2__filter-dialog-field">
+        <template #label>Edit suggestions</template>
+        <CdxSelect
+          v-model:selected="draftSuggestionFilter"
+          :menu-items="SUGGESTION_FILTER_OPTIONS"
+          default-label="All suggestions"
+        />
+      </CdxField>
+    </div>
+
+    <template #footer>
+      <CdxButton
+        class="wc2__filter-dialog-apply"
+        action="progressive"
+        weight="primary"
+        @click="applyFilters"
+      >
+        Apply
+      </CdxButton>
+    </template>
+  </CdxDialog>
+
+  <CdxDialog
     v-model:open="showRemoveDialog"
     title="Remove article from worklist"
     close-button-label="Cancel"
@@ -755,8 +911,63 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.wc2__toolbar-history {
+.wc2__toolbar-history,
+.wc2__toolbar-filter {
   flex-shrink: 0;
+}
+
+.wc2__filters-empty {
+  margin: 0 0 var(--spacing-100);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
+.wc2__filter-dialog-modal:deep(.cdx-dialog__body) {
+  padding-bottom: 0;
+}
+
+.wc2__filter-dialog-modal:deep(.cdx-dialog__footer) {
+  padding-top: var(--spacing-150);
+  border-top: none;
+}
+
+.wc2__filter-dialog {
+  display: flex;
+  flex-direction: column;
+}
+
+.wc2__filter-dialog-field {
+  margin: 0;
+}
+
+.wc2__filter-dialog-field:not(:last-child) {
+  margin-bottom: var(--spacing-100);
+}
+
+.wc2__filter-dialog-field:deep(.cdx-label) {
+  display: block;
+  padding-bottom: 0;
+  margin-bottom: var(--spacing-50);
+}
+
+.wc2__filter-dialog-field:deep(.cdx-label__label__text) {
+  font-weight: var(--font-weight-bold);
+}
+
+.wc2__filter-dialog-field:deep(.cdx-select-vue) {
+  width: 100%;
+}
+
+.wc2__filter-dialog-apply {
+  display: block;
+  width: 100%;
+}
+
+.wc2__filter-dialog-apply:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
 }
 
 .wc2__visit-page {
@@ -973,18 +1184,8 @@ onMounted(async () => {
   color: var(--color-base);
 }
 
-.wc2__suggestion-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
+.wc2__suggestion-text {
   color: var(--color-progressive);
-  cursor: pointer;
-  text-align: left;
-}
-
-.wc2__suggestion-link:hover {
-  text-decoration: underline;
 }
 
 .wc2__suggestion-sep {
