@@ -7,6 +7,7 @@ import {
   CdxIcon,
   CdxLookup,
   CdxMenuButton,
+  CdxSearchInput,
   CdxSelect,
   CdxTab,
   CdxTabs,
@@ -56,7 +57,6 @@ interface ArticleCard {
   order: number
   quality: Quality
   suggestions: string[]
-  workingOn: string[]
   note: ArticleNote | null
 }
 
@@ -85,7 +85,7 @@ const SUGGESTION_FILTER_OPTIONS: MenuItemData[] = [
 ]
 
 const SORT_OPTIONS: MenuItemData[] = [
-  { value: 'default', label: 'Default order' },
+  { value: 'default', label: 'Recently added' },
   { value: 'views-desc', label: 'Most views' },
   { value: 'views-asc', label: 'Fewest views' },
   { value: 'title-asc', label: 'Title A–Z' },
@@ -134,7 +134,6 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       order: index,
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
-      workingOn: index === 1 ? ['Sam'] : [],
       note: null,
     }
   } catch {
@@ -147,7 +146,6 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       order: index,
       quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
-      workingOn: index === 1 ? ['Sam'] : [],
       note: null,
     }
   }
@@ -161,6 +159,7 @@ const activeTab = ref('worklist')
 const sortBy = ref('default')
 const qualityFilter = ref('all')
 const suggestionFilter = ref('all')
+const searchQuery = ref('')
 const showFilterDialog = ref(false)
 const draftSortBy = ref('default')
 const draftQualityFilter = ref('all')
@@ -204,31 +203,11 @@ watch(lookupSelected, (val) => {
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
   const items: MenuItemData[] = [{ value: 'remove', label: 'Remove' }]
 
-  if (isWorkingOn(card)) {
-    items.push({ value: 'stop-working', label: 'Stop working on this' })
-  } else {
-    items.push({ value: 'start-working', label: "I'm working on this" })
-  }
-
   if (!card.note) {
     items.push({ value: 'add-note', label: 'Add a note' })
   }
 
   return items
-}
-
-function isWorkingOn(card: ArticleCard): boolean {
-  return card.workingOn.includes(CURRENT_USERNAME)
-}
-
-function startWorkingOn(card: ArticleCard) {
-  if (!isWorkingOn(card)) {
-    card.workingOn = [...card.workingOn, CURRENT_USERNAME]
-  }
-}
-
-function stopWorkingOn(card: ArticleCard) {
-  card.workingOn = card.workingOn.filter((name) => name !== CURRENT_USERNAME)
 }
 
 function canEditNote(card: ArticleCard): boolean {
@@ -333,11 +312,7 @@ function onRemoveCancelled() {
 }
 
 function onCardMenuAction(card: ArticleCard, action: string | null) {
-  if (action === 'start-working') {
-    startWorkingOn(card)
-  } else if (action === 'stop-working') {
-    stopWorkingOn(card)
-  } else if (action === 'add-note') {
+  if (action === 'add-note') {
     openNoteDialog(card, 'add')
   } else if (action === 'remove') {
     confirmRemove(card.title)
@@ -455,8 +430,29 @@ const hasActiveFilters = computed(
     || suggestionFilter.value !== 'all',
 )
 
+const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0)
+
+const emptyListMessage = computed(() => {
+  if (hasSearchQuery.value && hasActiveFilters.value) {
+    return 'No articles match your search and filters.'
+  }
+  if (hasSearchQuery.value) {
+    return 'No articles match your search.'
+  }
+  return 'No articles match these filters.'
+})
+
 const filteredCards = computed(() => {
+  const normalizedSearch = searchQuery.value.trim().toLowerCase()
+
   let result = cards.value.filter((card) => {
+    if (normalizedSearch) {
+      const haystack = `${card.title} ${card.description}`.toLowerCase()
+      if (!haystack.includes(normalizedSearch)) {
+        return false
+      }
+    }
+
     if (qualityFilter.value !== 'all' && card.quality !== qualityFilter.value) {
       return false
     }
@@ -483,7 +479,7 @@ const filteredCards = computed(() => {
       result = [...result].sort((a, b) => b.title.localeCompare(a.title))
       break
     default:
-      result = [...result].sort((a, b) => a.order - b.order)
+      result = [...result].sort((a, b) => b.order - a.order)
   }
 
   return result
@@ -501,6 +497,15 @@ function applyFilters() {
   qualityFilter.value = draftQualityFilter.value
   suggestionFilter.value = draftSuggestionFilter.value
   showFilterDialog.value = false
+}
+
+function resetFilters() {
+  draftSortBy.value = 'default'
+  draftQualityFilter.value = 'all'
+  draftSuggestionFilter.value = 'all'
+  sortBy.value = 'default'
+  qualityFilter.value = 'all'
+  suggestionFilter.value = 'all'
 }
 
 onMounted(async () => {
@@ -556,27 +561,24 @@ onMounted(async () => {
             </div>
           </nav>
 
+          <CdxSearchInput
+            v-if="!loading"
+            v-model="searchQuery"
+            class="wc2__search"
+            placeholder="Search articles"
+            aria-label="Search articles"
+          />
+
           <div class="wc2__page">
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
             <template v-else>
               <p v-if="filteredCards.length === 0" class="wc2__filters-empty">
-                No articles match these filters.
+                {{ emptyListMessage }}
               </p>
 
               <ul v-else class="wc2__list" role="list">
               <li v-for="card in filteredCards" :key="card.title" class="wc2__card">
-                <div
-                  v-if="card.workingOn.length"
-                  class="wc2__card-working-banner"
-                >
-                  Working on this:
-                  <template v-for="(name, index) in card.workingOn" :key="name">
-                    <span v-if="index > 0">, </span>
-                    <span class="wc2__card-working-name">{{ name }}</span>
-                  </template>
-                </div>
-
                 <div class="wc2__card-content">
                   <div class="wc2__card-top">
                     <a
@@ -785,7 +787,7 @@ onMounted(async () => {
         <CdxSelect
           v-model:selected="draftSortBy"
           :menu-items="SORT_OPTIONS"
-          default-label="Default order"
+          default-label="Recently added"
         />
       </CdxField>
 
@@ -809,14 +811,23 @@ onMounted(async () => {
     </div>
 
     <template #footer>
-      <CdxButton
-        class="wc2__filter-dialog-apply"
-        action="progressive"
-        weight="primary"
-        @click="applyFilters"
-      >
-        Apply
-      </CdxButton>
+      <div class="wc2__filter-dialog-footer">
+        <CdxButton
+          class="wc2__filter-dialog-apply"
+          action="progressive"
+          weight="primary"
+          @click="applyFilters"
+        >
+          Apply
+        </CdxButton>
+        <CdxButton
+          class="wc2__filter-dialog-reset"
+          weight="normal"
+          @click="resetFilters"
+        >
+          Reset all filters
+        </CdxButton>
+      </div>
     </template>
   </CdxDialog>
 
@@ -916,6 +927,17 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.wc2__search {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--spacing-100);
+}
+
+.wc2__search:deep(.cdx-search-input),
+.wc2__search:deep(.cdx-text-input) {
+  width: 100%;
+}
+
 .wc2__filters-empty {
   margin: 0 0 var(--spacing-100);
   font-family: var(--font-family-system-sans);
@@ -960,12 +982,29 @@ onMounted(async () => {
   width: 100%;
 }
 
+.wc2__filter-dialog-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+  width: 100%;
+}
+
 .wc2__filter-dialog-apply {
   display: block;
   width: 100%;
 }
 
 .wc2__filter-dialog-apply:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
+}
+
+.wc2__filter-dialog-reset {
+  display: block;
+  width: 100%;
+}
+
+.wc2__filter-dialog-reset:deep(.cdx-button) {
   width: 100%;
   justify-content: center;
 }
@@ -997,21 +1036,6 @@ onMounted(async () => {
   border: var(--border-width-base) solid var(--border-color-subtle);
   border-radius: var(--border-radius-base);
   background-color: var(--background-color-base);
-}
-
-.wc2__card-working-banner {
-  padding: var(--spacing-50) var(--spacing-100);
-  background-color: var(--background-color-notice-subtle);
-  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-medium);
-  color: var(--color-base);
-}
-
-.wc2__card-working-name {
-  color: var(--color-progressive);
 }
 
 .wc2__card-content {
