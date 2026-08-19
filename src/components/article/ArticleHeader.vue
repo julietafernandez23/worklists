@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, ref, useSlots, watch } from 'vue'
 import { CdxButton, CdxIcon, CdxPopover, CdxTextInput } from '@wikimedia/codex'
 import {
+  cdxIconBookmark,
+  cdxIconBookmarkOutline,
   cdxIconDownTriangle,
   cdxIconDownload,
   cdxIconEdit,
@@ -38,22 +40,24 @@ interface Props {
    * Drives the structural mobile vs desktop layout (icon toolbar vs text actions).
    */
   skin?: Skin
+  /** When true, show a bookmark control instead of the watchlist star. */
+  useBookmarkAction?: boolean
+  /** Whether the current article is bookmarked (bookmark icon filled vs outline). */
+  bookmarked?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   languagesCount: 18,
   skin: undefined,
+  useBookmarkAction: false,
+  bookmarked: false,
 })
 
 const inheritedSkin = inject(PROTOWIKI_CHROME_SKIN)
 const effectiveSkin = computed<Skin>(() => props.skin ?? inheritedSkin?.value ?? globalSkin.value)
 const { user } = useConfig()
 const isLoggedOut = computed(() => user.value === 'logged-out')
-
-const languagesButtonLabel = computed(() => {
-  const n = props.languagesCount ?? 18
-  return n === 1 ? '1 language' : `${n} languages`
-})
+const slots = useSlots()
 
 const emit = defineEmits<{
   talkClick: []
@@ -68,9 +72,24 @@ const emit = defineEmits<{
   languageSettingsClick: []
 }>()
 
+const languagesButtonLabel = computed(() => {
+  const n = props.languagesCount ?? 18
+  return n === 1 ? '1 language' : `${n} languages`
+})
+
+const bookmarkIcon = computed(() =>
+  props.bookmarked ? cdxIconBookmark : cdxIconBookmarkOutline,
+)
+
+const bookmarkLabel = computed(() =>
+  props.bookmarked ? 'Remove bookmark' : 'Bookmark article',
+)
+
 const langMenuOpen = ref(false)
+const bookmarkMenuOpen = ref(false)
 const langSearch = ref('')
 const langAnchor = ref<HTMLElement | null>(null)
+const bookmarkAnchor = ref<HTMLElement | null>(null)
 
 const filteredLanguageLinks = computed(() => {
   const q = langSearch.value.trim().toLowerCase()
@@ -84,6 +103,18 @@ watch(langMenuOpen, (open) => {
 
 function closeLangMenu() {
   langMenuOpen.value = false
+}
+
+function closeBookmarkMenu() {
+  bookmarkMenuOpen.value = false
+}
+
+function onBookmarkButtonClick(event: MouseEvent) {
+  bookmarkAnchor.value = event.currentTarget as HTMLElement
+  emit('bookmarkClick')
+  if (slots['bookmark-menu']) {
+    bookmarkMenuOpen.value = true
+  }
 }
 
 function onLanguagePick(row: ArticleLanguageLink) {
@@ -148,10 +179,10 @@ function onLanguagePick(row: ArticleLanguageLink) {
         <CdxButton
           class="article-header__icon-btn"
           weight="quiet"
-          aria-label="Watch"
-          @click="$emit('bookmarkClick')"
+          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+          @click="onBookmarkButtonClick"
         >
-          <CdxIcon :icon="cdxIconUnStar" />
+          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
         </CdxButton>
       </nav>
     </div>
@@ -186,10 +217,10 @@ function onLanguagePick(row: ArticleLanguageLink) {
         <button
           type="button"
           class="article-header__icon-tool"
-          aria-label="Watch"
-          @click="$emit('bookmarkClick')"
+          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+          @click="onBookmarkButtonClick"
         >
-          <CdxIcon :icon="cdxIconStar" />
+          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconStar" />
         </button>
         <button
           type="button"
@@ -204,10 +235,10 @@ function onLanguagePick(row: ArticleLanguageLink) {
         <button
           type="button"
           class="article-header__icon-tool"
-          aria-label="Watch"
-          @click="$emit('bookmarkClick')"
+          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+          @click="onBookmarkButtonClick"
         >
-          <CdxIcon :icon="cdxIconUnStar" />
+          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
         </button>
         <button
           type="button"
@@ -278,6 +309,20 @@ function onLanguagePick(row: ArticleLanguageLink) {
           </CdxButton>
         </div>
       </div>
+    </CdxPopover>
+
+    <CdxPopover
+      v-if="slots['bookmark-menu']"
+      v-model:open="bookmarkMenuOpen"
+      :anchor="bookmarkAnchor"
+      use-bottom-sheet
+      :placement="effectiveSkin === 'mobile' ? 'bottom-start' : 'bottom-end'"
+    >
+      <slot
+        name="bookmark-menu"
+        :article-title="title"
+        :close="closeBookmarkMenu"
+      />
     </CdxPopover>
 
     <p v-if="effectiveSkin === 'desktop'" class="article-header__tagline">

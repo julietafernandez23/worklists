@@ -20,6 +20,10 @@ interface Props {
   theme?: Theme
   /** Passed to **`ArticleHeader`** interlanguage control (**`N` languages**). */
   languagesCount?: number
+  /** Passed to **`ArticleHeader`** — bookmark control instead of watchlist star. */
+  useBookmarkAction?: boolean
+  /** Passed to **`ArticleHeader`** — filled vs outline bookmark icon. */
+  bookmarked?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,9 +34,11 @@ const props = withDefaults(defineProps<Props>(), {
   skin: undefined,
   theme: undefined,
   languagesCount: undefined,
+  useBookmarkAction: false,
+  bookmarked: false,
 })
 
-const emit = defineEmits<{ editClick: [] }>()
+const emit = defineEmits<{ editClick: []; bookmarkClick: [] }>()
 
 const inheritedSkin = inject(PROTOWIKI_CHROME_SKIN)
 const inheritedTheme = inject(PROTOWIKI_CHROME_THEME)
@@ -66,8 +72,15 @@ const chromeHeaderLabel = computed(() => {
       :title="chromeHeaderLabel"
       :languages-count="props.languagesCount"
       :skin="props.skin"
+      :use-bookmark-action="props.useBookmarkAction"
+      :bookmarked="props.bookmarked"
       @edit-click="emit('editClick')"
-    />
+      @bookmark-click="emit('bookmarkClick')"
+    >
+      <template v-if="$slots['bookmark-menu']" #bookmark-menu="slotProps">
+        <slot name="bookmark-menu" v-bind="slotProps" />
+      </template>
+    </ArticleHeader>
     <slot />
   </article>
 </template>

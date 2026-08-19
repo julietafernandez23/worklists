@@ -10,21 +10,31 @@ import type { Skin, Theme } from '@/theme'
 interface Props {
   /** Which committed snapshot HTML file to load (see **`articleSnapshotSlug`** in `./shared/articleSnapshotSlug.ts`). */
   article: string
+  /** Optional display title override for **`ArticleHeader`**. */
+  header?: string
   lang?: string
   dir?: 'ltr' | 'rtl'
   skin?: Skin
   theme?: Theme
   /** Forwarded **`ArticleWrapper`** → **`ArticleHeader`** (**`languagesCount` languages**). */
   languagesCount?: number
+  /** Forwarded **`ArticleWrapper`** → **`ArticleHeader`**. */
+  useBookmarkAction?: boolean
+  bookmarked?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lang: undefined,
   dir: undefined,
+  header: undefined,
   skin: undefined,
   theme: undefined,
   languagesCount: undefined,
+  useBookmarkAction: false,
+  bookmarked: false,
 })
+
+const emit = defineEmits<{ bookmarkClick: [] }>()
 
 /** Coalesce in-flight **`fetch`** calls per slug (Wet Leg, etc.). */
 const snapshotLoads = new Map<string, Promise<string>>()
@@ -100,10 +110,18 @@ watch(
     :lang="props.lang"
     :dir="props.dir"
     :title="props.article"
+    :header="props.header"
     :skin="props.skin"
     :theme="props.theme"
     :languages-count="props.languagesCount"
+    :use-bookmark-action="props.useBookmarkAction"
+    :bookmarked="props.bookmarked"
+    @bookmark-click="emit('bookmarkClick')"
   >
+    <template v-if="$slots['bookmark-menu']" #bookmark-menu="slotProps">
+      <slot name="bookmark-menu" v-bind="slotProps" />
+    </template>
+
     <div class="article-snapshot__below-header">
       <CdxProgressBar v-if="snapshotLoading" inline aria-label="Loading snapshot article" />
 
