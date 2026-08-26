@@ -7,6 +7,7 @@ import {
   CdxIcon,
   CdxLookup,
   CdxMenuButton,
+  CdxProgressBar,
   CdxSearchInput,
   CdxSelect,
   CdxTab,
@@ -21,9 +22,9 @@ import {
   cdxIconChartLine,
   cdxIconClose,
   cdxIconCode,
+  cdxIconConfigure,
   cdxIconEdit,
   cdxIconEllipsis,
-  cdxIconConfigure,
   cdxIconHistory,
   cdxIconInfo,
   cdxIconLightbulb,
@@ -40,7 +41,12 @@ definePage({
   },
 })
 
-type Quality = 'low' | 'medium' | 'high'
+type QualityBand = 'low' | 'medium' | 'high'
+
+interface QualityMetric {
+  label: string
+  progress: number
+}
 
 interface ArticleNote {
   text: string
@@ -55,14 +61,54 @@ interface ArticleCard {
   viewsPerMonth: string
   viewsCount: number
   order: number
-  quality: Quality
+  qualityScore: number
+  qualityMetrics: QualityMetric[]
   suggestions: string[]
+  workingOn: string[]
   note: ArticleNote | null
 }
 
 const CURRENT_USERNAME = 'LittleBird'
 
-const QUALITY_CYCLE: Quality[] = ['medium', 'high', 'low', 'high', 'medium', 'low', 'high']
+const QUALITY_METRIC_LABELS = [
+  'Article length',
+  'References',
+  'Internal links',
+  'Categories',
+  'Media (images/files)',
+  'Article structure',
+  'Infobox',
+  'Maintenance messages',
+] as const
+
+const QUALITY_PROFILES: Record<QualityBand, number[]> = {
+  high: [100, 100, 76, 80, 100, 76, 100, 0],
+  medium: [76, 65, 50, 40, 76, 55, 0, 0],
+  low: [45, 30, 20, 13, 50, 25, 0, 0],
+}
+
+const QUALITY_CYCLE: QualityBand[] = ['medium', 'high', 'low', 'high', 'medium', 'low', 'high']
+
+function fakeQualityMetrics(band: QualityBand, index: number): QualityMetric[] {
+  return QUALITY_METRIC_LABELS.map((label, metricIndex) => {
+    const base = QUALITY_PROFILES[band][metricIndex]
+    const variation = (index + metricIndex) % 3 === 0 ? -8 : (index + metricIndex) % 3 === 1 ? 5 : 0
+    const progress = Math.max(0, Math.min(100, base + variation))
+    return { label, progress }
+  })
+}
+
+function overallQualityScore(metrics: QualityMetric[]): number {
+  if (!metrics.length) return 0
+  const total = metrics.reduce((sum, metric) => sum + metric.progress, 0)
+  return Math.round(total / metrics.length)
+}
+
+function qualityBand(score: number): QualityBand {
+  if (score >= 80) return 'high'
+  if (score >= 50) return 'medium'
+  return 'low'
+}
 
 const VIEW_COUNTS = [20, 5, 35, 12, 8, 15, 120]
 
@@ -94,9 +140,9 @@ const SORT_OPTIONS: MenuItemData[] = [
 
 const QUALITY_FILTER_OPTIONS: MenuItemData[] = [
   { value: 'all', label: 'All quality' },
-  { value: 'high', label: 'High quality' },
-  { value: 'medium', label: 'Medium quality' },
-  { value: 'low', label: 'Low quality' },
+  { value: 'high', label: '80% or above' },
+  { value: 'medium', label: '50–79%' },
+  { value: 'low', label: 'Below 50%' },
 ]
 
 const ARTICLES = [
@@ -114,40 +160,49 @@ function fakeViews(index: number): string {
   return `${count}k views last month`
 }
 
-function qualityLabel(quality: Quality): string {
-  return `${quality.charAt(0).toUpperCase()}${quality.slice(1)} quality`
+function qualityLabel(score: number): string {
+  return `${score}% quality`
 }
 
 async function fetchArticleCard(title: string, index: number): Promise<ArticleCard> {
   const wikiTitle = title.replace(/ /g, '_')
-  try {
-    const res = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`,
-    )
-    const data = await res.json()
+  const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`
+
+  const summaryResult = await fetch(summaryUrl)
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null)
+
+  if (summaryResult) {
+    const qualityMetrics = fakeQualityMetrics(QUALITY_CYCLE[index % QUALITY_CYCLE.length], index)
     return {
-      title: data.title ?? title,
-      description: data.description?.trim() || '',
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+      title: summaryResult.title ?? title,
+      description: summaryResult.description?.trim() || '',
+      url: summaryResult.content_urls?.desktop?.page
+        ?? `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
       viewsPerMonth: fakeViews(index),
       viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
       order: index,
-      quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
+      qualityScore: overallQualityScore(qualityMetrics),
+      qualityMetrics,
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+      workingOn: index === 1 ? ['Sam'] : [],
       note: null,
     }
-  } catch {
-    return {
-      title,
-      description: '',
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-      viewsPerMonth: fakeViews(index),
-      viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
-      order: index,
-      quality: QUALITY_CYCLE[index % QUALITY_CYCLE.length],
-      suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
-      note: null,
-    }
+  }
+
+  const qualityMetrics = fakeQualityMetrics(QUALITY_CYCLE[index % QUALITY_CYCLE.length], index)
+  return {
+    title,
+    description: '',
+    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+    viewsPerMonth: fakeViews(index),
+    viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
+    order: index,
+    qualityScore: overallQualityScore(qualityMetrics),
+    qualityMetrics,
+    suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
+    workingOn: index === 1 ? ['Sam'] : [],
+    note: null,
   }
 }
 
@@ -174,15 +229,23 @@ const lookupPending = ref(false)
 const lookupIsRedLink = ref(false)
 const selectedPages = ref('')
 
+const showRemoveDialog = ref(false)
+const pendingRemoveTitle = ref<string | null>(null)
+
 const showNoteDialog = ref(false)
 const noteDialogCard = ref<ArticleCard | null>(null)
 const noteDialogMode = ref<'add' | 'edit'>('add')
 const noteDraft = ref('')
 
-const showRemoveDialog = ref(false)
-const pendingRemoveTitle = ref<string | null>(null)
+const qualitySheetArticle = ref<ArticleCard | null>(null)
 
-const showQualityHelpSheet = ref(false)
+function openQualitySheet(card: ArticleCard) {
+  qualitySheetArticle.value = card
+}
+
+function closeQualitySheet() {
+  qualitySheetArticle.value = null
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -201,13 +264,35 @@ watch(lookupSelected, (val) => {
 })
 
 function cardMenuItems(card: ArticleCard): MenuItemData[] {
-  const items: MenuItemData[] = [{ value: 'remove', label: 'Remove' }]
+  const items: MenuItemData[] = []
+
+  if (isWorkingOn(card)) {
+    items.push({ value: 'stop-working', label: 'Stop working on this' })
+  } else {
+    items.push({ value: 'start-working', label: "I'm working on this" })
+  }
 
   if (!card.note) {
     items.push({ value: 'add-note', label: 'Add a note' })
   }
 
+  items.push({ value: 'remove', label: 'Remove' })
+
   return items
+}
+
+function isWorkingOn(card: ArticleCard): boolean {
+  return card.workingOn.includes(CURRENT_USERNAME)
+}
+
+function startWorkingOn(card: ArticleCard) {
+  if (!isWorkingOn(card)) {
+    card.workingOn = [...card.workingOn, CURRENT_USERNAME]
+  }
+}
+
+function stopWorkingOn(card: ArticleCard) {
+  card.workingOn = card.workingOn.filter((name) => name !== CURRENT_USERNAME)
 }
 
 function canEditNote(card: ArticleCard): boolean {
@@ -312,7 +397,11 @@ function onRemoveCancelled() {
 }
 
 function onCardMenuAction(card: ArticleCard, action: string | null) {
-  if (action === 'add-note') {
+  if (action === 'start-working') {
+    startWorkingOn(card)
+  } else if (action === 'stop-working') {
+    stopWorkingOn(card)
+  } else if (action === 'add-note') {
     openNoteDialog(card, 'add')
   } else if (action === 'remove') {
     confirmRemove(card.title)
@@ -405,12 +494,6 @@ async function onAdd() {
 
 const canAdd = computed(() => selectedPages.value.trim().length > 0)
 
-const addPrimaryAction = computed(() => ({
-  label: 'Add',
-  actionType: 'progressive' as const,
-  disabled: !canAdd.value || addPending.value,
-}))
-
 const canSaveNote = computed(() => noteDraft.value.trim().length > 0)
 
 const notePrimaryAction = computed(() => ({
@@ -422,6 +505,12 @@ const notePrimaryAction = computed(() => ({
 const noteDialogTitle = computed(() =>
   noteDialogMode.value === 'edit' ? 'Edit note' : 'Add a note',
 )
+
+const addPrimaryAction = computed(() => ({
+  label: 'Add',
+  actionType: 'progressive' as const,
+  disabled: !canAdd.value || addPending.value,
+}))
 
 const hasActiveFilters = computed(
   () =>
@@ -453,7 +542,7 @@ const filteredCards = computed(() => {
       }
     }
 
-    if (qualityFilter.value !== 'all' && card.quality !== qualityFilter.value) {
+    if (qualityFilter.value !== 'all' && qualityBand(card.qualityScore) !== qualityFilter.value) {
       return false
     }
     if (
@@ -579,6 +668,17 @@ onMounted(async () => {
 
               <ul v-else class="wc2__list" role="list">
               <li v-for="card in filteredCards" :key="card.title" class="wc2__card">
+                <div
+                  v-if="card.workingOn.length"
+                  class="wc2__card-working-banner"
+                >
+                  Working on this:
+                  <template v-for="(name, index) in card.workingOn" :key="name">
+                    <span v-if="index > 0">, </span>
+                    <span class="wc2__card-working-name">{{ name }}</span>
+                  </template>
+                </div>
+
                 <div class="wc2__card-content">
                   <div class="wc2__card-top">
                     <a
@@ -617,29 +717,29 @@ onMounted(async () => {
 
                     <div
                       class="wc2__signal wc2__signal--quality"
-                      :class="`wc2__signal--${card.quality}`"
+                      :class="`wc2__signal--${qualityBand(card.qualityScore)}`"
                     >
                       <CdxIcon
-                        v-if="card.quality === 'high'"
+                        v-if="qualityBand(card.qualityScore) === 'high'"
                         :icon="cdxIconArrowUp"
                         size="small"
                         class="wc2__signal-icon"
                       />
                       <CdxIcon
-                        v-else-if="card.quality === 'low'"
+                        v-else-if="qualityBand(card.qualityScore) === 'low'"
                         :icon="cdxIconArrowDown"
                         size="small"
                         class="wc2__signal-icon"
                       />
                       <span v-else class="wc2__signal-icon wc2__signal-icon--medium" aria-hidden="true">—</span>
-                      <span class="wc2__signal-text wc2__signal-text--quality">{{ qualityLabel(card.quality) }}</span>
+                      <span class="wc2__signal-text wc2__signal-text--quality">{{ qualityLabel(card.qualityScore) }}</span>
                       <CdxButton
                         weight="quiet"
                         :icon-only="true"
                         size="small"
-                        aria-label="What is article quality?"
+                        :aria-label="`View quality breakdown for ${card.title}`"
                         class="wc2__quality-help"
-                        @click="showQualityHelpSheet = true"
+                        @click="openQualitySheet(card)"
                       >
                         <CdxIcon :icon="cdxIconInfo" size="small" />
                       </CdxButton>
@@ -695,25 +795,43 @@ onMounted(async () => {
 
     <Transition name="wc2-sheet">
       <div
-        v-if="showQualityHelpSheet"
+        v-if="qualitySheetArticle"
         class="wc2__sheet-backdrop"
-        @click.self="showQualityHelpSheet = false"
+        @click.self="closeQualitySheet"
       >
-        <div class="wc2__sheet">
+        <div
+          class="wc2__sheet wc2__sheet--quality"
+          role="dialog"
+          :aria-label="`Quality breakdown for ${qualitySheetArticle.title}`"
+        >
           <div class="wc2__sheet-header">
-            <p class="wc2__sheet-title">What is this?</p>
+            <p class="wc2__sheet-title">{{ qualitySheetArticle.title }}</p>
             <CdxButton
               weight="quiet"
               :icon-only="true"
               aria-label="Close"
-              @click="showQualityHelpSheet = false"
+              @click="closeQualitySheet"
             >
               <CdxIcon :icon="cdxIconClose" />
             </CdxButton>
           </div>
-          <p class="wc2__sheet-body">
-            Article quality is an automatic estimate of how complete the article's structure is. It looks at signals like article length, references, section headings, media, and categories.
-          </p>
+
+          <div class="wc2__quality-grid">
+            <div
+              v-for="metric in qualitySheetArticle.qualityMetrics"
+              :key="metric.label"
+              class="wc2__quality-metric"
+            >
+              <span class="wc2__quality-metric-label">{{ metric.label }}</span>
+              <div class="wc2__quality-metric-bar">
+                <CdxProgressBar
+                  :value="metric.progress"
+                  :aria-label="`${metric.label}: ${metric.progress}%`"
+                />
+                <span class="wc2__quality-metric-value">{{ metric.progress }}%</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
@@ -1038,6 +1156,21 @@ onMounted(async () => {
   background-color: var(--background-color-base);
 }
 
+.wc2__card-working-banner {
+  padding: var(--spacing-50) var(--spacing-100);
+  background-color: var(--background-color-notice-subtle);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+}
+
+.wc2__card-working-name {
+  color: var(--color-progressive);
+}
+
 .wc2__card-content {
   display: flex;
   flex-direction: column;
@@ -1253,6 +1386,54 @@ onMounted(async () => {
   width: 100%;
   background-color: var(--background-color-base);
   padding: var(--spacing-100);
+}
+
+.wc2__sheet--quality {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.wc2__quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-75);
+}
+
+.wc2__quality-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+  padding: var(--spacing-75);
+  border: var(--border-width-base) solid var(--border-color-subtle);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-base);
+}
+
+.wc2__quality-metric-label {
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-base);
+  line-height: var(--line-height-small);
+}
+
+.wc2__quality-metric-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-50);
+}
+
+.wc2__quality-metric-bar :deep(.cdx-progress-bar) {
+  flex: 1;
+}
+
+.wc2__quality-metric-value {
+  flex-shrink: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+  color: var(--color-subtle);
 }
 
 .wc2__sheet-header {

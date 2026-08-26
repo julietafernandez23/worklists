@@ -33,14 +33,14 @@ interface ArticleCard {
 }
 
 const QUALITY_METRIC_LABELS = [
-  'Article Length',
+  'Article length',
   'References',
-  'Internal Links',
+  'Internal links',
   'Categories',
-  'Media (Images/Files)',
-  'Article Structure',
+  'Media (images/files)',
+  'Article structure',
   'Infobox',
-  'Maintenance Messages',
+  'Maintenance messages',
 ] as const
 
 const QUALITY_PROFILES: Record<Quality, number[]> = {
