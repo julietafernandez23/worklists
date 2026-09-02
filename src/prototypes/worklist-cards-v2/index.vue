@@ -11,10 +11,12 @@ import {
   CdxSearchInput,
   CdxSelect,
   CdxTab,
+  CdxTable,
   CdxTabs,
   CdxTextArea,
+  CdxToggleButtonGroup,
 } from '@wikimedia/codex'
-import type { MenuItemData } from '@wikimedia/codex'
+import type { ButtonGroupItem, MenuItemData } from '@wikimedia/codex'
 import {
   cdxIconAdd,
   cdxIconArrowDown,
@@ -22,12 +24,16 @@ import {
   cdxIconChartLine,
   cdxIconClose,
   cdxIconCode,
+  cdxIconCollapse,
   cdxIconConfigure,
   cdxIconEdit,
   cdxIconEllipsis,
+  cdxIconExpand,
   cdxIconHistory,
   cdxIconInfo,
   cdxIconLightbulb,
+  cdxIconNext,
+  cdxIconSpeechBubbles,
   cdxIconTrash,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
@@ -43,6 +49,8 @@ definePage({
 
 type QualityBand = 'low' | 'medium' | 'high'
 
+type ArticleView = 'cards' | 'table'
+
 interface QualityMetric {
   label: string
   progress: number
@@ -54,10 +62,21 @@ interface ArticleNote {
   addedAt: Date
 }
 
+interface TalkThread {
+  title: string
+  anchor: string
+}
+
+interface TalkDiscussion {
+  threads: TalkThread[]
+}
+
 interface ArticleCard {
   title: string
   description: string
   url: string
+  wiki: string
+  dateAdded: Date
   viewsPerMonth: string
   viewsCount: number
   order: number
@@ -66,6 +85,7 @@ interface ArticleCard {
   suggestions: string[]
   workingOn: string[]
   note: ArticleNote | null
+  talk: TalkDiscussion | null
 }
 
 const CURRENT_USERNAME = 'LittleBird'
@@ -155,6 +175,11 @@ const ARTICLES = [
   'Biodiversity',
 ]
 
+const VIEW_TOGGLE_BUTTONS: ButtonGroupItem[] = [
+  { value: 'cards', label: 'Cards' },
+  { value: 'table', label: 'Table' },
+]
+
 function fakeViews(index: number): string {
   const count = VIEW_COUNTS[index % VIEW_COUNTS.length]
   return `${count}k views last month`
@@ -164,7 +189,108 @@ function qualityLabel(score: number): string {
   return `${score}% quality`
 }
 
-async function fetchArticleCard(title: string, index: number): Promise<ArticleCard> {
+function formatWikiDate(d: Date): string {
+  return d.toLocaleString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour12: false,
+  })
+}
+
+interface ApiTocSection {
+  line: string
+  hLevel: number
+  anchor: string
+}
+
+function isMaintenanceSection(title: string): boolean {
+  if (/^Wiki Education/i.test(title)) return true
+  if (/^Untitled$/i.test(title)) return true
+  return false
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function fetchTalkDiscussion(articleTitle: string): Promise<TalkDiscussion | null> {
+  const talkPage = `Talk:${articleTitle.replace(/ /g, '_')}`
+  const params = new URLSearchParams({
+    action: 'parse',
+    page: talkPage,
+    prop: 'tocdata',
+    format: 'json',
+    formatversion: '2',
+    origin: '*',
+  })
+  const url = `https://en.wikipedia.org/w/api.php?${params}`
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const res = await fetch(url)
+      if (res.status === 429) {
+        await sleep(1200 * (attempt + 1))
+        continue
+      }
+      if (!res.ok) return null
+
+      const data = await res.json()
+      if (data.error?.code === 'missingtitle') return null
+      if (data.error || !data.parse?.tocdata?.sections) return null
+
+      const threads = (data.parse.tocdata.sections as ApiTocSection[])
+        .filter((section) => section.hLevel === 2)
+        .map((section) => ({
+          title: section.line.trim(),
+          anchor: section.anchor,
+        }))
+        .filter((thread) => thread.title && !isMaintenanceSection(thread.title))
+
+      return threads.length ? { threads } : null
+    } catch {
+      if (attempt === 3) return null
+      await sleep(600 * (attempt + 1))
+    }
+  }
+
+  return null
+}
+
+async function loadTalkDiscussions(cardsList: ArticleCard[]) {
+  for (const card of cardsList) {
+    card.talk = await fetchTalkDiscussion(card.title)
+    await sleep(500)
+  }
+}
+
+function talkPageUrl(title: string, anchor?: string): string {
+  const wikiTitle = title.replace(/ /g, '_')
+  const base = `https://en.wikipedia.org/wiki/Talk:${encodeURIComponent(wikiTitle)}`
+  return anchor ? `${base}#${anchor}` : base
+}
+
+function startTalkDiscussionUrl(title: string): string {
+  const wikiTitle = `Talk:${title.replace(/ /g, '_')}`
+  return `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(wikiTitle)}&action=edit&section=new`
+}
+
+function openStartTalkDiscussion(title: string) {
+  window.open(startTalkDiscussionUrl(title), '_blank', 'noopener,noreferrer')
+}
+
+function discussionLabel(count: number): string {
+  if (count === 0) return 'Talk page'
+  return count === 1 ? '1 discussion on talk page' : `${count} discussions on talk page`
+}
+
+async function fetchArticleCard(
+  title: string,
+  index: number,
+  dateAdded: Date = new Date(Date.now() - (ARTICLES.length - index) * 86_400_000),
+): Promise<ArticleCard> {
   const wikiTitle = title.replace(/ /g, '_')
   const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`
 
@@ -179,6 +305,8 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       description: summaryResult.description?.trim() || '',
       url: summaryResult.content_urls?.desktop?.page
         ?? `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+      wiki: 'English Wikipedia',
+      dateAdded,
       viewsPerMonth: fakeViews(index),
       viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
       order: index,
@@ -187,6 +315,7 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
       suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
       workingOn: index === 1 ? ['Sam'] : [],
       note: null,
+      talk: null,
     }
   }
 
@@ -195,6 +324,8 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
     title,
     description: '',
     url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+    wiki: 'English Wikipedia',
+    dateAdded,
     viewsPerMonth: fakeViews(index),
     viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
     order: index,
@@ -203,6 +334,7 @@ async function fetchArticleCard(title: string, index: number): Promise<ArticleCa
     suggestions: SUGGESTION_SETS[index % SUGGESTION_SETS.length],
     workingOn: index === 1 ? ['Sam'] : [],
     note: null,
+    talk: null,
   }
 }
 
@@ -215,6 +347,7 @@ const sortBy = ref('default')
 const qualityFilter = ref('all')
 const suggestionFilter = ref('all')
 const searchQuery = ref('')
+const articleView = ref<ArticleView>('cards')
 const showFilterDialog = ref(false)
 const draftSortBy = ref('default')
 const draftQualityFilter = ref('all')
@@ -228,6 +361,8 @@ const lookupMenuItems = ref<MenuItemData[]>([])
 const lookupPending = ref(false)
 const lookupIsRedLink = ref(false)
 const selectedPages = ref('')
+
+const expandedTalkTitles = ref<Set<string>>(new Set())
 
 const showRemoveDialog = ref(false)
 const pendingRemoveTitle = ref<string | null>(null)
@@ -379,6 +514,20 @@ function removeNote(card: ArticleCard) {
   }
 }
 
+function isTalkExpanded(title: string): boolean {
+  return expandedTalkTitles.value.has(title)
+}
+
+function toggleTalkExpanded(title: string) {
+  const next = new Set(expandedTalkTitles.value)
+  if (next.has(title)) {
+    next.delete(title)
+  } else {
+    next.add(title)
+  }
+  expandedTalkTitles.value = next
+}
+
 function confirmRemove(title: string) {
   pendingRemoveTitle.value = title
   showRemoveDialog.value = true
@@ -485,11 +634,12 @@ async function onAdd() {
   addPending.value = true
   const startIndex = cards.value.length
   const added = await Promise.all(
-    newTitles.map((title, offset) => fetchArticleCard(title, startIndex + offset)),
+    newTitles.map((title, offset) => fetchArticleCard(title, startIndex + offset, new Date())),
   )
   cards.value = [...cards.value, ...added]
   addPending.value = false
   showAddDialog.value = false
+  void loadTalkDiscussions(added)
 }
 
 const canAdd = computed(() => selectedPages.value.trim().length > 0)
@@ -574,6 +724,38 @@ const filteredCards = computed(() => {
   return result
 })
 
+const tableSort = ref<Record<string, 'asc' | 'desc' | 'none'>>({})
+
+const tableColumns = [
+  { id: 'article', label: 'Page', allowSort: true },
+  { id: 'wiki', label: 'Wiki', allowSort: true },
+  { id: 'dateAdded', label: 'Date added', allowSort: true },
+  { id: 'actions', label: '', allowSort: false, width: '3rem', textAlign: 'end' as const },
+]
+
+const tableData = computed(() => {
+  const list = filteredCards.value.map((card) => ({
+    ...card,
+    article: card.title,
+    dateAddedFormatted: formatWikiDate(card.dateAdded),
+    _sortDate: card.dateAdded.getTime(),
+  }))
+
+  const entries = Object.entries(tableSort.value)
+  if (!entries.length) return list
+
+  const [col, order] = entries[0] as [string, 'asc' | 'desc' | 'none']
+  if (order === 'none') return list
+
+  return [...list].sort((a, b) => {
+    let cmp = 0
+    if (col === 'article') cmp = a.article.localeCompare(b.article)
+    else if (col === 'wiki') cmp = a.wiki.localeCompare(b.wiki)
+    else if (col === 'dateAdded') cmp = a._sortDate - b._sortDate
+    return order === 'asc' ? cmp : -cmp
+  })
+})
+
 function openFilterDialog() {
   draftSortBy.value = sortBy.value
   draftQualityFilter.value = qualityFilter.value
@@ -602,6 +784,7 @@ onMounted(async () => {
     ARTICLES.map((title, index) => fetchArticleCard(title, index)),
   )
   loading.value = false
+  void loadTalkDiscussions(cards.value)
 })
 </script>
 
@@ -650,13 +833,23 @@ onMounted(async () => {
             </div>
           </nav>
 
-          <CdxSearchInput
-            v-if="!loading"
-            v-model="searchQuery"
-            class="wc2__search"
-            placeholder="Search articles"
-            aria-label="Search articles"
-          />
+          <div v-if="!loading" class="wc2__search-row">
+            <div class="wc2__search-wrap">
+              <CdxSearchInput
+                v-model="searchQuery"
+                class="wc2__search"
+                placeholder="Search articles"
+                aria-label="Search articles"
+              />
+            </div>
+            <div class="wc2__view-toggle-wrap">
+              <CdxToggleButtonGroup
+                v-model="articleView"
+                class="wc2__view-toggle"
+                :buttons="VIEW_TOGGLE_BUTTONS"
+              />
+            </div>
+          </div>
 
           <div class="wc2__page">
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
@@ -665,6 +858,37 @@ onMounted(async () => {
               <p v-if="filteredCards.length === 0" class="wc2__filters-empty">
                 {{ emptyListMessage }}
               </p>
+
+              <div v-else-if="articleView === 'table'" class="wc2__table-wrap">
+                <CdxTable
+                  v-model:sort="tableSort"
+                  caption="Articles in this worklist"
+                  hide-caption
+                  class="wc2__table"
+                  :columns="tableColumns"
+                  :data="tableData"
+                  :show-vertical-borders="false"
+                >
+                  <template #item-article="{ row }">
+                    <a
+                      class="wc2__article-link"
+                      :href="row.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ row.article }}</a>
+                  </template>
+
+                  <template #item-dateAdded="{ row }">
+                    {{ row.dateAddedFormatted }}
+                  </template>
+
+                  <template #item-actions="{ row }">
+                    <CdxButton weight="quiet" aria-label="Remove" @click="confirmRemove(row.title)">
+                      <CdxIcon :icon="cdxIconTrash" />
+                    </CdxButton>
+                  </template>
+                </CdxTable>
+              </div>
 
               <ul v-else class="wc2__list" role="list">
               <li v-for="card in filteredCards" :key="card.title" class="wc2__card">
@@ -772,6 +996,84 @@ onMounted(async () => {
                     <p class="wc2__card-note-meta">
                       {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
                     </p>
+                  </div>
+
+                  <div v-if="card.talk?.threads.length" class="wc2__card-talk">
+                    <button
+                      type="button"
+                      class="wc2__card-talk-toggle"
+                      :aria-expanded="isTalkExpanded(card.title)"
+                      @click="toggleTalkExpanded(card.title)"
+                    >
+                      <CdxIcon
+                        :icon="cdxIconSpeechBubbles"
+                        size="small"
+                        class="wc2__card-talk-icon"
+                      />
+                      <span class="wc2__card-talk-summary">
+                        <span class="wc2__card-talk-count">
+                          {{ discussionLabel(card.talk.threads.length) }}
+                        </span>
+                        <span
+                          v-if="!isTalkExpanded(card.title) && card.talk.threads.length"
+                          class="wc2__card-talk-preview"
+                          :title="card.talk.threads[0].title"
+                        >
+                          {{ card.talk.threads[0].title }}
+                        </span>
+                      </span>
+                      <CdxIcon
+                        :icon="isTalkExpanded(card.title) ? cdxIconCollapse : cdxIconExpand"
+                        size="small"
+                        class="wc2__card-talk-chevron"
+                      />
+                    </button>
+
+                    <div v-if="isTalkExpanded(card.title)" class="wc2__card-talk-body">
+                      <ul
+                        class="wc2__card-talk-threads"
+                        role="list"
+                      >
+                        <li
+                          v-for="thread in card.talk.threads.slice(0, 3)"
+                          :key="thread.anchor"
+                          class="wc2__card-talk-thread"
+                        >
+                          <a
+                            class="wc2__card-talk-thread-link"
+                            :href="talkPageUrl(card.title, thread.anchor)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            :title="thread.title"
+                          >
+                            <span class="wc2__card-talk-thread-title">{{ thread.title }}</span>
+                            <CdxIcon
+                              :icon="cdxIconNext"
+                              size="small"
+                              class="wc2__card-talk-thread-arrow"
+                            />
+                          </a>
+                        </li>
+                      </ul>
+                      <div class="wc2__card-talk-actions">
+                        <CdxButton
+                          class="wc2__card-talk-start"
+                          weight="normal"
+                          @click="openStartTalkDiscussion(card.title)"
+                        >
+                          <CdxIcon :icon="cdxIconAdd" />
+                          Start a discussion
+                        </CdxButton>
+                        <a
+                          class="wc2__card-talk-link"
+                          :href="talkPageUrl(card.title)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View talk page
+                        </a>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </li>
@@ -1045,15 +1347,37 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.wc2__search-row {
+  display: flex;
+  align-items: stretch;
+  margin-bottom: var(--spacing-100);
+}
+
+.wc2__search-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-inline-end: var(--spacing-50, 8px);
+}
+
 .wc2__search {
   display: block;
   width: 100%;
-  margin-bottom: var(--spacing-100);
+  max-width: 100%;
+}
+
+.wc2__view-toggle-wrap {
+  flex-shrink: 0;
+}
+
+.wc2__view-toggle {
+  height: 100%;
 }
 
 .wc2__search:deep(.cdx-search-input),
 .wc2__search:deep(.cdx-text-input) {
+  min-width: 0;
   width: 100%;
+  max-width: 100%;
 }
 
 .wc2__filters-empty {
@@ -1144,6 +1468,22 @@ onMounted(async () => {
 
 .wc2__list > li {
   margin: 0;
+}
+
+.wc2__table-wrap {
+  overflow-x: auto;
+}
+
+.wc2__table :deep(.cdx-table__table__header--sortable) {
+  color: var(--color-base);
+}
+
+.wc2__table :deep(.cdx-table__table__header--sortable:hover) {
+  color: var(--color-base);
+}
+
+.wc2__article-link {
+  color: var(--color-progressive);
 }
 
 .wc2__card {
@@ -1288,6 +1628,157 @@ onMounted(async () => {
   font-weight: var(--font-weight-normal);
   line-height: var(--line-height-small);
   color: var(--color-subtle);
+}
+
+.wc2__card-talk {
+  margin-top: var(--spacing-50);
+  padding: var(--spacing-75);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-neutral-subtle, #f8f9fa);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wc2__card-talk-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-50);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.wc2__card-talk-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-subtle);
+}
+
+.wc2__card-talk-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-base);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.wc2__card-talk-count {
+  font-weight: var(--font-weight-bold);
+}
+
+.wc2__card-talk-preview {
+  display: block;
+  margin-top: var(--spacing-25);
+  color: var(--color-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc2__card-talk-chevron {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-subtle);
+}
+
+.wc2__card-talk-body {
+  margin-top: var(--spacing-75);
+  padding-top: var(--spacing-75);
+  border-top: var(--border-width-base) solid var(--border-color-subtle);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.wc2__card-talk-empty {
+  margin: 0 0 var(--spacing-75);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-subtle);
+}
+
+.wc2__card-talk-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+  align-items: stretch;
+}
+
+.wc2__card-talk-start:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
+  gap: var(--spacing-50);
+}
+
+.wc2__card-talk-threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+}
+
+.wc2__card-talk-thread {
+  margin: 0;
+  min-width: 0;
+}
+
+.wc2__card-talk-thread-link {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-50);
+  min-width: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-small);
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.wc2__card-talk-thread-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc2__card-talk-thread-arrow {
+  flex-shrink: 0;
+  color: var(--color-subtle);
+}
+
+.wc2__card-talk-thread-link:hover {
+  text-decoration: underline;
+}
+
+.wc2__card-talk-thread-link:hover .wc2__card-talk-thread-arrow {
+  color: var(--color-progressive);
+}
+
+.wc2__card-talk-link {
+  display: inline-block;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.wc2__card-talk-link:hover {
+  text-decoration: underline;
 }
 
 .wc2__card-signals {
