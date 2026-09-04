@@ -3,11 +3,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CdxButton,
-  CdxDialog,
   CdxIcon,
   CdxMenuButton,
   CdxMessage,
   CdxProgressBar,
+  CdxRadio,
   CdxThumbnail,
 } from '@wikimedia/codex'
 import type { MenuButtonItemData } from '@wikimedia/codex'
@@ -15,11 +15,12 @@ import {
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
-  cdxIconConfigure,
+  cdxIconClose,
+  cdxIconEdit,
   cdxIconImage,
   cdxIconLayout,
   cdxIconLightbulb,
-  cdxIconLink,
+  cdxIconShare,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import { useConfig } from '@/composables/useConfig'
@@ -70,7 +71,7 @@ const VIEW_MENU_ITEMS: MenuButtonItemData[] = [
 ]
 
 const route = useRoute()
-const { user, displayName } = useConfig()
+const { user } = useConfig()
 
 const collectionName = computed(() => {
   const value = route.query.collection
@@ -86,11 +87,11 @@ const layoutMenuAction = ref<string | null>(null)
 const collectionMenuAction = ref<string | null>(null)
 
 const visibility = ref<CollectionVisibility>('private')
-const showMakePublicDialog = ref(false)
-const showMakePrivateDialog = ref(false)
+const showVisibilitySheet = ref(false)
+const showShareSheet = ref(false)
+const draftVisibility = ref<CollectionVisibility>('private')
 const visibilitySaving = ref(false)
 const visibilityError = ref<string | null>(null)
-const visibilityRetryAction = ref<'public' | 'private' | null>(null)
 const linkCopied = ref(false)
 
 const shareLink = computed(() => {
@@ -100,19 +101,20 @@ const shareLink = computed(() => {
   return url.toString()
 })
 
-const shareLinkCopiedLabel = computed(() =>
+const shareButtonLabel = 'Share collection'
+
+const copyLinkLabel = computed(() =>
   linkCopied.value ? 'Link copied' : 'Copy link',
 )
 
-const articleCountLabel = computed(() => {
-  const count = articles.value.length
-  return count === 1 ? '1 article' : `${count} articles`
+const collectionMenuItems = computed<MenuButtonItemData[]>(() => {
+  const items: MenuButtonItemData[] = [
+    { value: 'rename', label: 'Rename collection' },
+    { value: 'visibility', label: 'Edit visibility' },
+    { value: 'delete', label: 'Delete collection', action: 'destructive' },
+  ]
+  return items
 })
-
-const COLLECTION_MENU_ITEMS: MenuButtonItemData[] = [
-  { value: 'rename', label: 'Rename collection' },
-  { value: 'delete', label: 'Delete collection', action: 'destructive' },
-]
 
 function fakeViews(index: number): string {
   const count = VIEW_COUNTS[index % VIEW_COUNTS.length]
@@ -131,7 +133,10 @@ function onLayoutMenuAction(action: string | null) {
   layoutMenuAction.value = null
 }
 
-function onCollectionMenuAction(_action: string | null) {
+function onCollectionMenuAction(action: string | null) {
+  if (action === 'visibility') {
+    openVisibilitySheet()
+  }
   collectionMenuAction.value = null
 }
 
@@ -139,44 +144,30 @@ function loadVisibility() {
   visibility.value = getCollectionVisibility(collectionName.value)
 }
 
-function openMakePublicDialog() {
+function openVisibilitySheet() {
+  draftVisibility.value = visibility.value
   visibilityError.value = null
-  showMakePublicDialog.value = true
+  showVisibilitySheet.value = true
 }
 
-function openMakePrivateDialog() {
+function closeVisibilitySheet() {
+  showVisibilitySheet.value = false
+  draftVisibility.value = visibility.value
   visibilityError.value = null
-  showMakePrivateDialog.value = true
 }
 
-async function confirmMakePublic() {
+async function saveVisibility() {
   visibilitySaving.value = true
   visibilityError.value = null
-  visibilityRetryAction.value = 'public'
   try {
-    await saveCollectionVisibility(collectionName.value, 'public')
-    visibility.value = 'public'
-    showMakePublicDialog.value = false
-    visibilityRetryAction.value = null
+    await saveCollectionVisibility(collectionName.value, draftVisibility.value)
+    visibility.value = draftVisibility.value
+    if (visibility.value === 'private') {
+      linkCopied.value = false
+    }
+    closeVisibilitySheet()
   } catch {
-    visibilityError.value = 'Could not share this collection. Please try again.'
-  } finally {
-    visibilitySaving.value = false
-  }
-}
-
-async function confirmMakePrivate() {
-  visibilitySaving.value = true
-  visibilityError.value = null
-  visibilityRetryAction.value = 'private'
-  try {
-    await saveCollectionVisibility(collectionName.value, 'private')
-    visibility.value = 'private'
-    showMakePrivateDialog.value = false
-    linkCopied.value = false
-    visibilityRetryAction.value = null
-  } catch {
-    visibilityError.value = 'Could not stop sharing. Please try again.'
+    visibilityError.value = 'Could not save visibility. Please try again.'
   } finally {
     visibilitySaving.value = false
   }
@@ -191,12 +182,14 @@ async function copyShareLink() {
   }
 }
 
-async function retryVisibilitySave() {
-  if (visibilityRetryAction.value === 'public') {
-    await confirmMakePublic()
-  } else if (visibilityRetryAction.value === 'private') {
-    await confirmMakePrivate()
-  }
+function openShareSheet() {
+  linkCopied.value = false
+  showShareSheet.value = true
+}
+
+function closeShareSheet() {
+  showShareSheet.value = false
+  linkCopied.value = false
 }
 
 async function fetchSavedArticle(title: string, index: number): Promise<SavedArticle> {
@@ -258,6 +251,16 @@ watch(collectionName, loadArticles)
           <a href="#" class="cvm-saved__nav-link">Collections</a>
         </div>
         <div class="cvm-saved__nav-actions">
+          <CdxButton
+            v-if="isOwner && visibility === 'public'"
+            class="cvm-saved__share"
+            weight="quiet"
+            :icon-only="true"
+            :aria-label="shareButtonLabel"
+            @click="openShareSheet"
+          >
+            <CdxIcon :icon="cdxIconShare" />
+          </CdxButton>
           <CdxMenuButton
             v-model:selected="layoutMenuAction"
             class="cvm-saved__layout"
@@ -270,77 +273,21 @@ watch(collectionName, loadArticles)
             <CdxIcon :icon="cdxIconLayout" />
           </CdxMenuButton>
           <CdxMenuButton
+            v-if="isOwner"
             v-model:selected="collectionMenuAction"
-            class="cvm-saved__configure"
+            class="cvm-saved__edit"
             weight="quiet"
-            :menu-items="COLLECTION_MENU_ITEMS"
+            :menu-items="collectionMenuItems"
             :menu-config="{ placement: 'bottom-end' }"
-            aria-label="Collection options"
+            aria-label="Edit collection"
             @update:selected="onCollectionMenuAction"
           >
-            <CdxIcon :icon="cdxIconConfigure" />
+            <CdxIcon :icon="cdxIconEdit" />
           </CdxMenuButton>
         </div>
       </nav>
 
       <p class="cvm-saved__sort">Sorted by most recent</p>
-
-      <section
-        v-if="collectionView === 'contributor' && isOwner"
-        class="cvm-saved__sharing"
-        aria-label="Collection sharing"
-      >
-        <div v-if="visibility === 'private'" class="cvm-saved__sharing-row">
-          <p class="cvm-saved__sharing-meta">
-            <span class="cvm-saved__sharing-badge">Private</span>
-            Only you can see this collection.
-          </p>
-          <CdxButton
-            weight="quiet"
-            @click="openMakePublicDialog"
-          >
-            Share collection
-          </CdxButton>
-        </div>
-
-        <div v-else class="cvm-saved__sharing-row">
-          <p class="cvm-saved__sharing-meta">
-            <span class="cvm-saved__sharing-badge cvm-saved__sharing-badge--public">Public</span>
-            Anyone can view and copy these articles.
-          </p>
-          <div class="cvm-saved__sharing-actions">
-            <CdxButton
-              weight="normal"
-              @click="copyShareLink"
-            >
-              <CdxIcon :icon="cdxIconLink" />
-              {{ shareLinkCopiedLabel }}
-            </CdxButton>
-            <button
-              type="button"
-              class="cvm-saved__sharing-stop"
-              @click="openMakePrivateDialog"
-            >
-              Stop sharing
-            </button>
-          </div>
-        </div>
-
-        <CdxMessage
-          v-if="visibilityError"
-          type="error"
-          class="cvm-saved__sharing-error"
-        >
-          <p class="cvm-saved__sharing-error-text">{{ visibilityError }}</p>
-          <CdxButton
-            weight="quiet"
-            :disabled="visibilitySaving"
-            @click="retryVisibilitySave"
-          >
-            Try again
-          </CdxButton>
-        </CdxMessage>
-      </section>
 
       <CdxProgressBar v-if="loading" inline aria-label="Loading saved articles" />
 
@@ -448,51 +395,115 @@ watch(collectionName, loadArticles)
         </li>
       </ul>
     </main>
+
+    <Transition name="cvm-sheet">
+      <div
+        v-if="showVisibilitySheet"
+        class="cvm-saved__sheet-backdrop"
+        @click.self="closeVisibilitySheet"
+      >
+        <div
+          class="cvm-saved__sheet"
+          role="dialog"
+          aria-labelledby="cvm-visibility-title"
+        >
+          <div class="cvm-saved__sheet-header">
+            <h2 id="cvm-visibility-title" class="cvm-saved__sheet-title">
+              Edit visibility
+            </h2>
+            <CdxButton
+              weight="quiet"
+              :icon-only="true"
+              aria-label="Close"
+              @click="closeVisibilitySheet"
+            >
+              <CdxIcon :icon="cdxIconClose" />
+            </CdxButton>
+          </div>
+
+          <fieldset class="cvm-saved__visibility-options">
+            <legend class="cvm-saved__visibility-legend">Collection visibility</legend>
+
+            <div class="cvm-saved__visibility-option">
+              <CdxRadio v-model="draftVisibility" input-value="private">
+                Private
+              </CdxRadio>
+              <p class="cvm-saved__visibility-desc">
+                Only you can see this collection.
+              </p>
+            </div>
+
+            <div class="cvm-saved__visibility-option">
+              <CdxRadio v-model="draftVisibility" input-value="public">
+                Public
+              </CdxRadio>
+              <p class="cvm-saved__visibility-desc">
+                Anyone can find your collection through search. You can share your
+                collection with others.
+              </p>
+            </div>
+          </fieldset>
+
+          <CdxMessage
+            v-if="visibilityError"
+            type="error"
+            class="cvm-saved__sheet-error"
+          >
+            {{ visibilityError }}
+          </CdxMessage>
+
+          <CdxButton
+            class="cvm-saved__sheet-save"
+            weight="primary"
+            action="progressive"
+            :disabled="visibilitySaving"
+            @click="saveVisibility"
+          >
+            Save
+          </CdxButton>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="cvm-sheet">
+      <div
+        v-if="showShareSheet"
+        class="cvm-saved__sheet-backdrop"
+        @click.self="closeShareSheet"
+      >
+        <div
+          class="cvm-saved__sheet"
+          role="dialog"
+          aria-labelledby="cvm-share-title"
+        >
+          <div class="cvm-saved__sheet-header">
+            <h2 id="cvm-share-title" class="cvm-saved__sheet-title">
+              Share collection
+            </h2>
+            <CdxButton
+              weight="quiet"
+              :icon-only="true"
+              aria-label="Close"
+              @click="closeShareSheet"
+            >
+              <CdxIcon :icon="cdxIconClose" />
+            </CdxButton>
+          </div>
+
+          <p class="cvm-saved__share-link">{{ shareLink }}</p>
+
+          <CdxButton
+            class="cvm-saved__sheet-save"
+            weight="primary"
+            action="progressive"
+            @click="copyShareLink"
+          >
+            {{ copyLinkLabel }}
+          </CdxButton>
+        </div>
+      </div>
+    </Transition>
   </ChromeWrapper>
-
-  <CdxDialog
-    v-model:open="showMakePublicDialog"
-    title="Share this collection?"
-    close-button-label="Cancel"
-    :dismissable="true"
-    :primary-action="{
-      label: 'Share collection',
-      actionType: 'progressive',
-      disabled: visibilitySaving,
-    }"
-    :default-action="{ label: 'Cancel' }"
-    @primary="confirmMakePublic"
-    @default="showMakePublicDialog = false"
-  >
-    <div class="cvm-saved__dialog-body">
-      <p>
-        <strong>{{ collectionName }}</strong> will appear in search. Anyone can open it,
-        see that it belongs to {{ displayName }}, and copy its {{ articleCountLabel }} into
-        their own collections.
-      </p>
-      <p class="cvm-saved__dialog-note">
-        Your editing goals and status notes stay private. You can stop sharing anytime.
-      </p>
-    </div>
-  </CdxDialog>
-
-  <CdxDialog
-    v-model:open="showMakePrivateDialog"
-    title="Stop sharing?"
-    close-button-label="Cancel"
-    :dismissable="true"
-    :primary-action="{
-      label: 'Stop sharing',
-      disabled: visibilitySaving,
-    }"
-    :default-action="{ label: 'Cancel' }"
-    @primary="confirmMakePrivate"
-    @default="showMakePrivateDialog = false"
-  >
-    <p class="cvm-saved__dialog-text">
-      The collection will disappear from search. Only people with the link can still open it.
-    </p>
-  </CdxDialog>
 </template>
 
 <style scoped>
@@ -530,7 +541,8 @@ watch(collectionName, loadArticles)
 }
 
 .cvm-saved__layout,
-.cvm-saved__configure {
+.cvm-saved__edit,
+.cvm-saved__share {
   flex-shrink: 0;
 }
 
@@ -554,86 +566,114 @@ watch(collectionName, loadArticles)
   color: var(--color-subtle);
 }
 
-.cvm-saved__sharing {
-  margin-bottom: var(--spacing-100);
-  padding-bottom: var(--spacing-100);
-  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+.cvm-saved__sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background-color: rgba(0, 0, 0, 0.45);
 }
 
-.cvm-saved__sharing-row {
+.cvm-saved__sheet {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--spacing-100);
+  width: 100%;
+  max-height: 85vh;
+  padding: var(--spacing-100);
+  border-radius: var(--border-radius-base) var(--border-radius-base) 0 0;
+  background-color: var(--background-color-base);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.cvm-saved__sheet-header {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-75);
+  gap: var(--spacing-100);
 }
 
-.cvm-saved__sharing-meta {
+.cvm-saved__sheet-title {
   margin: 0;
-  flex: 1 1 12rem;
-  min-width: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-large);
+  color: var(--color-base);
+}
+
+.cvm-saved__visibility-options {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.cvm-saved__visibility-legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cvm-saved__visibility-option + .cvm-saved__visibility-option {
+  margin-top: var(--spacing-100);
+}
+
+.cvm-saved__visibility-desc {
+  margin: var(--spacing-25) 0 0 calc(var(--spacing-100) + var(--spacing-50));
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-small);
   line-height: var(--line-height-small);
   color: var(--color-subtle);
 }
 
-.cvm-saved__sharing-badge {
-  margin-inline-end: var(--spacing-50);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-base);
-}
-
-.cvm-saved__sharing-badge--public {
-  color: var(--color-success);
-}
-
-.cvm-saved__sharing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-75);
-}
-
-.cvm-saved__sharing-stop {
+.cvm-saved__sheet-error {
   margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  line-height: var(--line-height-medium);
-  color: var(--color-progressive);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
-.cvm-saved__sharing-error {
-  margin-top: var(--spacing-75);
+.cvm-saved__sheet-save:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
 }
 
-.cvm-saved__sharing-error-text {
-  margin: 0 0 var(--spacing-50);
-}
-
-.cvm-saved__dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-75);
-}
-
-.cvm-saved__dialog-body p,
-.cvm-saved__dialog-text {
+.cvm-saved__share-link {
   margin: 0;
+  padding: var(--spacing-75);
+  border: var(--border-width-base) solid var(--border-color-base);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-neutral-subtle);
   font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  line-height: var(--line-height-medium);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
   color: var(--color-base);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.cvm-saved__dialog-note {
-  color: var(--color-subtle);
+.cvm-sheet-enter-active,
+.cvm-sheet-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.cvm-sheet-enter-active .cvm-saved__sheet,
+.cvm-sheet-leave-active .cvm-saved__sheet {
+  transition: transform 0.2s ease;
+}
+
+.cvm-sheet-enter-from,
+.cvm-sheet-leave-to {
+  opacity: 0;
+}
+
+.cvm-sheet-enter-from .cvm-saved__sheet,
+.cvm-sheet-leave-to .cvm-saved__sheet {
+  transform: translateY(100%);
 }
 
 .cvm-saved__empty {
