@@ -1,8 +1,19 @@
 const STORAGE_KEY = 'ces:saved-items'
+const VISIBILITY_STORAGE_KEY = 'ces:collection-visibility'
+
+export type CollectionVisibility = 'private' | 'public'
 
 /** Demo seed — pre-populated articles for specific collections. */
 const DEFAULT_COLLECTION_ARTICLES: Record<string, string[]> = {
   'Articles on bands I want to edit': ['The Strokes', 'Boygenius'],
+}
+
+const DEFAULT_COLLECTION_OWNERS: Record<string, string> = {
+  'Articles on bands I want to edit': 'LittleBird',
+}
+
+const DEFAULT_COLLECTION_VISIBILITY: Record<string, CollectionVisibility> = {
+  'Articles on bands I want to edit': 'public',
 }
 
 type SavedItemsMap = Record<string, string[]>
@@ -42,4 +53,35 @@ export function getCollectionArticles(collection: string): string[] {
   }
 
   return result
+}
+
+type VisibilityMap = Record<string, CollectionVisibility>
+
+function loadVisibilityMap(): VisibilityMap {
+  try {
+    const raw = sessionStorage.getItem(VISIBILITY_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as VisibilityMap
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export function getCollectionVisibility(collection: string): CollectionVisibility {
+  return loadVisibilityMap()[collection] ?? DEFAULT_COLLECTION_VISIBILITY[collection] ?? 'private'
+}
+
+export function getCollectionOwner(collection: string): string {
+  return DEFAULT_COLLECTION_OWNERS[collection] ?? 'LittleBird'
+}
+
+export async function saveCollectionVisibility(
+  collection: string,
+  visibility: CollectionVisibility,
+): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  const map = loadVisibilityMap()
+  map[collection] = visibility
+  sessionStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(map))
 }

@@ -1,0 +1,228 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { CdxProgressBar, CdxThumbnail } from '@wikimedia/codex'
+import { cdxIconImage } from '@wikimedia/codex-icons'
+import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
+import { fetchPublicCollectionArticle, type PublicCollectionArticle } from '../article-cards'
+import {
+  getCollectionArticles,
+  getCollectionOwner,
+  getCollectionVisibility,
+} from '../saved-items'
+
+definePage({
+  meta: {
+    title: 'Public collection (editing support)',
+    description: 'Visitor view of a shared public collection.',
+  },
+})
+
+const route = useRoute()
+
+const collectionName = computed(() => {
+  const value = route.query.collection
+  return typeof value === 'string' && value.trim() ? value.trim() : 'Collection'
+})
+
+const ownerUsername = computed(() => getCollectionOwner(collectionName.value))
+
+const ownerUserPage = computed(() => ({
+  path: '/collections-editing-support/user',
+  query: { username: ownerUsername.value },
+}))
+
+const articles = ref<PublicCollectionArticle[]>([])
+const loading = ref(true)
+const isPrivate = ref(false)
+
+const articleCountLabel = computed(() => {
+  const count = articles.value.length
+  return count === 1 ? '1 article' : `${count} articles`
+})
+
+async function loadCollection() {
+  loading.value = true
+  isPrivate.value = getCollectionVisibility(collectionName.value) === 'private'
+
+  if (isPrivate.value) {
+    articles.value = []
+    loading.value = false
+    return
+  }
+
+  const titles = getCollectionArticles(collectionName.value)
+  articles.value = await Promise.all(titles.map((title) => fetchPublicCollectionArticle(title)))
+  loading.value = false
+}
+
+onMounted(loadCollection)
+watch(collectionName, loadCollection)
+</script>
+
+<template>
+  <ChromeWrapper :last-edited-notice="false" skin="mobile">
+    <main class="ces-public">
+      <header class="ces-public__header">
+        <h1 class="ces-public__title">{{ collectionName }}</h1>
+        <p class="ces-public__meta">
+          by
+          <RouterLink class="ces-public__owner" :to="ownerUserPage">
+            {{ ownerUsername }}
+          </RouterLink>
+          <span class="ces-public__meta-sep" aria-hidden="true">·</span>
+          <span>{{ articleCountLabel }}</span>
+        </p>
+      </header>
+
+      <CdxProgressBar v-if="loading" inline aria-label="Loading collection" />
+
+      <p v-else-if="isPrivate" class="ces-public__empty">
+        This collection is private.
+      </p>
+
+      <p v-else-if="!articles.length" class="ces-public__empty">
+        This collection has no articles yet.
+      </p>
+
+      <ul v-else class="ces-public__cards" role="list">
+        <li v-for="article in articles" :key="article.title" class="ces-public__card">
+          <CdxThumbnail
+            class="ces-public__thumbnail"
+            :thumbnail="article.thumbnail"
+            :placeholder-icon="cdxIconImage"
+          />
+          <div class="ces-public__item-body">
+            <span class="ces-public__item-title">{{ article.title }}</span>
+            <p v-if="article.description" class="ces-public__item-description">
+              {{ article.description }}
+            </p>
+          </div>
+        </li>
+      </ul>
+    </main>
+  </ChromeWrapper>
+</template>
+
+<style scoped>
+.ces-public {
+  padding: var(--spacing-150) var(--spacing-100) var(--spacing-200);
+}
+
+.ces-public__header {
+  margin-bottom: var(--spacing-100);
+}
+
+.ces-public__title {
+  margin: 0 0 var(--spacing-50);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-xx-large);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-xx-large);
+  color: var(--color-base);
+}
+
+.ces-public__meta {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
+.ces-public__owner {
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.ces-public__owner:hover {
+  text-decoration: underline;
+}
+
+.ces-public__meta-sep {
+  margin-inline: var(--spacing-50);
+}
+
+.ces-public__empty {
+  margin: var(--spacing-100) 0 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
+.ces-public__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-50);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ces-public__card {
+  display: flex;
+  align-items: stretch;
+  min-height: 6.5rem;
+  padding: 0;
+  border: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.ces-public__thumbnail {
+  flex: 0 0 40%;
+  width: 40%;
+  max-width: 9.5rem;
+  margin: 0;
+  align-self: stretch;
+}
+
+.ces-public__thumbnail:deep(.cdx-thumbnail) {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 6.5rem;
+  margin: 0;
+}
+
+.ces-public__thumbnail:deep(.cdx-thumbnail__image),
+.ces-public__thumbnail:deep(.cdx-thumbnail__placeholder) {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 6.5rem;
+  border: none;
+  border-radius: 0;
+}
+
+.ces-public__thumbnail:deep(.cdx-thumbnail__placeholder__icon) {
+  width: 2rem;
+  height: 2rem;
+}
+
+.ces-public__item-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--spacing-35);
+  min-width: 0;
+  padding: var(--spacing-100);
+}
+
+.ces-public__item-title {
+  font-family: var(--font-family-serif);
+  font-size: var(--font-size-x-large);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-x-large);
+  color: var(--color-base);
+}
+
+.ces-public__item-description {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+</style>

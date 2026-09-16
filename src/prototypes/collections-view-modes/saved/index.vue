@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import {
   CdxButton,
+  CdxDialog,
   CdxIcon,
   CdxMenuButton,
-  CdxMessage,
   CdxProgressBar,
-  CdxRadio,
   CdxThumbnail,
 } from '@wikimedia/codex'
 import type { MenuButtonItemData } from '@wikimedia/codex'
@@ -15,21 +14,21 @@ import {
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
+  cdxIconCheck,
   cdxIconClose,
   cdxIconEdit,
   cdxIconImage,
   cdxIconLayout,
   cdxIconLightbulb,
-  cdxIconShare,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import { useConfig } from '@/composables/useConfig'
 import {
-  getCollectionArticles,
-  getCollectionVisibility,
-  saveCollectionVisibility,
-  type CollectionVisibility,
-} from '../saved-items'
+  addArticlesToWorklist,
+  EVENT_WORKLIST_LABEL,
+  EVENT_WORKLIST_ROUTE,
+} from '@/lib/event-worklist-storage'
+import { getCollectionArticles } from '../saved-items'
 
 definePage({
   meta: {
@@ -86,34 +85,45 @@ const collectionView = ref<CollectionView>('grid')
 const layoutMenuAction = ref<string | null>(null)
 const collectionMenuAction = ref<string | null>(null)
 
-const visibility = ref<CollectionVisibility>('private')
-const showVisibilitySheet = ref(false)
-const showShareSheet = ref(false)
-const draftVisibility = ref<CollectionVisibility>('private')
-const visibilitySaving = ref(false)
-const visibilityError = ref<string | null>(null)
-const linkCopied = ref(false)
+const showWorklistDialog = ref(false)
+const worklistDialogPending = ref(false)
+const worklistToast = ref<{ addedCount: number; skippedCount: number } | null>(null)
 
-const shareLink = computed(() => {
-  if (typeof window === 'undefined') return ''
-  const url = new URL(window.location.href)
-  url.searchParams.set('collection', collectionName.value)
-  return url.toString()
-})
+const collectionMenuItems: MenuButtonItemData[] = [
+  { value: 'add-to-worklist', label: 'Add to event worklist' },
+  { value: 'rename', label: 'Rename collection' },
+  { value: 'delete', label: 'Delete collection', action: 'destructive' },
+]
 
-const shareButtonLabel = 'Share collection'
-
-const copyLinkLabel = computed(() =>
-  linkCopied.value ? 'Link copied' : 'Copy link',
+const collectionArticleTitles = computed(() =>
+  getCollectionArticles(collectionName.value),
 )
 
-const collectionMenuItems = computed<MenuButtonItemData[]>(() => {
-  const items: MenuButtonItemData[] = [
-    { value: 'rename', label: 'Rename collection' },
-    { value: 'visibility', label: 'Edit visibility' },
-    { value: 'delete', label: 'Delete collection', action: 'destructive' },
-  ]
-  return items
+const worklistDialogMessage = computed(() => {
+  const count = collectionArticleTitles.value.length
+  const noun = count === 1 ? 'article' : 'articles'
+  return `Add ${count} ${noun} from this collection to the ${EVENT_WORKLIST_LABEL} event worklist? Articles already on the worklist will be skipped.`
+})
+
+const worklistDialogPrimaryAction = computed(() => ({
+  label: 'Add to worklist',
+  actionType: 'progressive' as const,
+  disabled: !collectionArticleTitles.value.length || worklistDialogPending.value,
+}))
+
+const worklistToastMessage = computed(() => {
+  if (!worklistToast.value) return ''
+  const { addedCount, skippedCount } = worklistToast.value
+  if (!addedCount) {
+    return skippedCount === 1
+      ? 'That article is already on the event worklist.'
+      : 'Those articles are already on the event worklist.'
+  }
+  const addedNoun = addedCount === 1 ? 'article has' : 'articles have'
+  if (!skippedCount) {
+    return `${addedCount} ${addedNoun} been added to the event worklist.`
+  }
+  return `${addedCount} ${addedNoun} been added to the event worklist (${skippedCount} skipped).`
 })
 
 function fakeViews(index: number): string {
@@ -134,62 +144,28 @@ function onLayoutMenuAction(action: string | null) {
 }
 
 function onCollectionMenuAction(action: string | null) {
-  if (action === 'visibility') {
-    openVisibilitySheet()
+  if (action === 'add-to-worklist') {
+    showWorklistDialog.value = true
   }
   collectionMenuAction.value = null
 }
 
-function loadVisibility() {
-  visibility.value = getCollectionVisibility(collectionName.value)
+function closeWorklistDialog() {
+  showWorklistDialog.value = false
 }
 
-function openVisibilitySheet() {
-  draftVisibility.value = visibility.value
-  visibilityError.value = null
-  showVisibilitySheet.value = true
-}
-
-function closeVisibilitySheet() {
-  showVisibilitySheet.value = false
-  draftVisibility.value = visibility.value
-  visibilityError.value = null
-}
-
-async function saveVisibility() {
-  visibilitySaving.value = true
-  visibilityError.value = null
-  try {
-    await saveCollectionVisibility(collectionName.value, draftVisibility.value)
-    visibility.value = draftVisibility.value
-    if (visibility.value === 'private') {
-      linkCopied.value = false
-    }
-    closeVisibilitySheet()
-  } catch {
-    visibilityError.value = 'Could not save visibility. Please try again.'
-  } finally {
-    visibilitySaving.value = false
+async function confirmAddToWorklist() {
+  if (!collectionArticleTitles.value.length) {
+    showWorklistDialog.value = false
+    return
   }
-}
 
-async function copyShareLink() {
-  try {
-    await navigator.clipboard.writeText(shareLink.value)
-    linkCopied.value = true
-  } catch {
-    linkCopied.value = false
-  }
-}
-
-function openShareSheet() {
-  linkCopied.value = false
-  showShareSheet.value = true
-}
-
-function closeShareSheet() {
-  showShareSheet.value = false
-  linkCopied.value = false
+  worklistDialogPending.value = true
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  const { added, skipped } = addArticlesToWorklist(collectionArticleTitles.value)
+  worklistDialogPending.value = false
+  showWorklistDialog.value = false
+  worklistToast.value = { addedCount: added.length, skippedCount: skipped.length }
 }
 
 async function fetchSavedArticle(title: string, index: number): Promise<SavedArticle> {
@@ -227,7 +203,6 @@ async function fetchSavedArticle(title: string, index: number): Promise<SavedArt
 
 async function loadArticles() {
   loading.value = true
-  loadVisibility()
   const titles = getCollectionArticles(collectionName.value)
   articles.value = await Promise.all(titles.map((title, index) => fetchSavedArticle(title, index)))
   loading.value = false
@@ -251,16 +226,6 @@ watch(collectionName, loadArticles)
           <a href="#" class="cvm-saved__nav-link">Collections</a>
         </div>
         <div class="cvm-saved__nav-actions">
-          <CdxButton
-            v-if="isOwner && visibility === 'public'"
-            class="cvm-saved__share"
-            weight="quiet"
-            :icon-only="true"
-            :aria-label="shareButtonLabel"
-            @click="openShareSheet"
-          >
-            <CdxIcon :icon="cdxIconShare" />
-          </CdxButton>
           <CdxMenuButton
             v-model:selected="layoutMenuAction"
             class="cvm-saved__layout"
@@ -396,114 +361,50 @@ watch(collectionName, loadArticles)
       </ul>
     </main>
 
-    <Transition name="cvm-sheet">
-      <div
-        v-if="showVisibilitySheet"
-        class="cvm-saved__sheet-backdrop"
-        @click.self="closeVisibilitySheet"
-      >
-        <div
-          class="cvm-saved__sheet"
-          role="dialog"
-          aria-labelledby="cvm-visibility-title"
+    <div
+      v-if="worklistToast"
+      class="cvm-saved__worklist-toast"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="cvm-saved__worklist-toast-icon" aria-hidden="true">
+        <CdxIcon :icon="cdxIconCheck" />
+      </span>
+      <p class="cvm-saved__worklist-toast-message">
+        {{ worklistToastMessage }}
+        <RouterLink
+          v-if="worklistToast.addedCount > 0"
+          :to="EVENT_WORKLIST_ROUTE"
+          class="cvm-saved__worklist-toast-link"
         >
-          <div class="cvm-saved__sheet-header">
-            <h2 id="cvm-visibility-title" class="cvm-saved__sheet-title">
-              Edit visibility
-            </h2>
-            <CdxButton
-              weight="quiet"
-              :icon-only="true"
-              aria-label="Close"
-              @click="closeVisibilitySheet"
-            >
-              <CdxIcon :icon="cdxIconClose" />
-            </CdxButton>
-          </div>
-
-          <fieldset class="cvm-saved__visibility-options">
-            <legend class="cvm-saved__visibility-legend">Collection visibility</legend>
-
-            <div class="cvm-saved__visibility-option">
-              <CdxRadio v-model="draftVisibility" input-value="private">
-                Private
-              </CdxRadio>
-              <p class="cvm-saved__visibility-desc">
-                Only you can see this collection.
-              </p>
-            </div>
-
-            <div class="cvm-saved__visibility-option">
-              <CdxRadio v-model="draftVisibility" input-value="public">
-                Public
-              </CdxRadio>
-              <p class="cvm-saved__visibility-desc">
-                Anyone can find your collection through search. You can share your
-                collection with others.
-              </p>
-            </div>
-          </fieldset>
-
-          <CdxMessage
-            v-if="visibilityError"
-            type="error"
-            class="cvm-saved__sheet-error"
-          >
-            {{ visibilityError }}
-          </CdxMessage>
-
-          <CdxButton
-            class="cvm-saved__sheet-save"
-            weight="primary"
-            action="progressive"
-            :disabled="visibilitySaving"
-            @click="saveVisibility"
-          >
-            Save
-          </CdxButton>
-        </div>
-      </div>
-    </Transition>
-
-    <Transition name="cvm-sheet">
-      <div
-        v-if="showShareSheet"
-        class="cvm-saved__sheet-backdrop"
-        @click.self="closeShareSheet"
+          View worklist
+        </RouterLink>
+      </p>
+      <CdxButton
+        weight="quiet"
+        :icon-only="true"
+        aria-label="Dismiss"
+        class="cvm-saved__worklist-toast-close"
+        @click="worklistToast = null"
       >
-        <div
-          class="cvm-saved__sheet"
-          role="dialog"
-          aria-labelledby="cvm-share-title"
-        >
-          <div class="cvm-saved__sheet-header">
-            <h2 id="cvm-share-title" class="cvm-saved__sheet-title">
-              Share collection
-            </h2>
-            <CdxButton
-              weight="quiet"
-              :icon-only="true"
-              aria-label="Close"
-              @click="closeShareSheet"
-            >
-              <CdxIcon :icon="cdxIconClose" />
-            </CdxButton>
-          </div>
-
-          <p class="cvm-saved__share-link">{{ shareLink }}</p>
-
-          <CdxButton
-            class="cvm-saved__sheet-save"
-            weight="primary"
-            action="progressive"
-            @click="copyShareLink"
-          >
-            {{ copyLinkLabel }}
-          </CdxButton>
-        </div>
-      </div>
-    </Transition>
+        <CdxIcon :icon="cdxIconClose" />
+      </CdxButton>
+    </div>
   </ChromeWrapper>
+
+  <CdxDialog
+    v-model:open="showWorklistDialog"
+    title="Add to event worklist"
+    close-button-label="Close"
+    :dismissable="!worklistDialogPending"
+    :primary-action="worklistDialogPrimaryAction"
+    @primary="confirmAddToWorklist"
+    @update:open="(open) => { if (!open) closeWorklistDialog() }"
+  >
+    <p class="cvm-saved__worklist-dialog-text">
+      {{ worklistDialogMessage }}
+    </p>
+  </CdxDialog>
 </template>
 
 <style scoped>
@@ -541,8 +442,7 @@ watch(collectionName, loadArticles)
 }
 
 .cvm-saved__layout,
-.cvm-saved__edit,
-.cvm-saved__share {
+.cvm-saved__edit {
   flex-shrink: 0;
 }
 
@@ -566,114 +466,57 @@ watch(collectionName, loadArticles)
   color: var(--color-subtle);
 }
 
-.cvm-saved__sheet-backdrop {
+.cvm-saved__worklist-dialog-text {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+}
+
+.cvm-saved__worklist-toast {
   position: fixed;
-  inset: 0;
+  inset-inline: var(--spacing-100);
+  bottom: var(--spacing-100);
   z-index: 100;
   display: flex;
-  align-items: flex-end;
-  background-color: rgba(0, 0, 0, 0.45);
-}
-
-.cvm-saved__sheet {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-100);
-  width: 100%;
-  max-height: 85vh;
+  align-items: flex-start;
+  gap: var(--spacing-75);
   padding: var(--spacing-100);
-  border-radius: var(--border-radius-base) var(--border-radius-base) 0 0;
-  background-color: var(--background-color-base);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
-}
-
-.cvm-saved__sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-100);
-}
-
-.cvm-saved__sheet-title {
-  margin: 0;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-large);
-  font-weight: var(--font-weight-bold);
-  line-height: var(--line-height-large);
-  color: var(--color-base);
-}
-
-.cvm-saved__visibility-options {
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
-.cvm-saved__visibility-legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.cvm-saved__visibility-option + .cvm-saved__visibility-option {
-  margin-top: var(--spacing-100);
-}
-
-.cvm-saved__visibility-desc {
-  margin: var(--spacing-25) 0 0 calc(var(--spacing-100) + var(--spacing-50));
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
-  color: var(--color-subtle);
-}
-
-.cvm-saved__sheet-error {
-  margin: 0;
-}
-
-.cvm-saved__sheet-save:deep(.cdx-button) {
-  width: 100%;
-  justify-content: center;
-}
-
-.cvm-saved__share-link {
-  margin: 0;
-  padding: var(--spacing-75);
-  border: var(--border-width-base) solid var(--border-color-base);
+  border: var(--border-width-base) solid var(--border-color-subtle);
   border-radius: var(--border-radius-base);
-  background-color: var(--background-color-neutral-subtle);
+  background-color: var(--background-color-base);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.cvm-saved__worklist-toast-icon {
+  flex-shrink: 0;
+  color: var(--color-success);
+}
+
+.cvm-saved__worklist-toast-message {
+  flex: 1 1 auto;
+  margin: 0;
   font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
   color: var(--color-base);
-  overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
-.cvm-sheet-enter-active,
-.cvm-sheet-leave-active {
-  transition: opacity 0.2s ease;
+.cvm-saved__worklist-toast-link {
+  display: inline-block;
+  margin-top: var(--spacing-25);
+  color: var(--color-progressive);
+  text-decoration: none;
 }
 
-.cvm-sheet-enter-active .cvm-saved__sheet,
-.cvm-sheet-leave-active .cvm-saved__sheet {
-  transition: transform 0.2s ease;
+.cvm-saved__worklist-toast-link:hover {
+  text-decoration: underline;
 }
 
-.cvm-sheet-enter-from,
-.cvm-sheet-leave-to {
-  opacity: 0;
-}
-
-.cvm-sheet-enter-from .cvm-saved__sheet,
-.cvm-sheet-leave-to .cvm-saved__sheet {
-  transform: translateY(100%);
+.cvm-saved__worklist-toast-close {
+  flex-shrink: 0;
+  margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 0;
 }
 
 .cvm-saved__empty {

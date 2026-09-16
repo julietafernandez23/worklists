@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   CdxButton,
   CdxCheckbox,
   CdxDialog,
   CdxIcon,
   CdxMenuButton,
+  CdxMessage,
   CdxProgressBar,
+  CdxRadio,
   CdxThumbnail,
 } from '@wikimedia/codex'
 import type { MenuButtonItemData } from '@wikimedia/codex'
@@ -17,12 +19,22 @@ import {
   cdxIconCalendar,
   cdxIconChartLine,
   cdxIconClock,
-  cdxIconConfigure,
+  cdxIconClose,
+  cdxIconEdit,
   cdxIconImage,
+  cdxIconLayout,
   cdxIconLightbulb,
+  cdxIconListBullet,
+  cdxIconShare,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
-import { getCollectionArticles } from '../saved-items'
+import { useConfig } from '@/composables/useConfig'
+import {
+  getCollectionArticles,
+  getCollectionVisibility,
+  saveCollectionVisibility,
+  type CollectionVisibility,
+} from '../saved-items'
 
 definePage({
   meta: {
@@ -30,6 +42,8 @@ definePage({
     description: 'View articles saved to a collection.',
   },
 })
+
+type CollectionView = 'grid' | 'list'
 
 type Quality = 'low' | 'medium' | 'high'
 
@@ -67,16 +81,56 @@ const SUGGESTION_SETS = [
 const DAYS_SINCE_EDIT = [2, 14, 45, 7, 30, 1, 90]
 
 const route = useRoute()
+const router = useRouter()
+const { user } = useConfig()
 
 const collectionName = computed(() => {
   const value = route.query.collection
   return typeof value === 'string' && value.trim() ? value.trim() : 'Saved items'
 })
 
+const isOwner = computed(() => user.value !== 'logged-out')
+
 const articles = ref<SavedArticle[]>([])
 const loading = ref(true)
+const collectionView = ref<CollectionView>('grid')
 const collectionMenuAction = ref<string | null>(null)
 const showDataDialog = ref(false)
+
+const visibility = ref<CollectionVisibility>('private')
+const showVisibilitySheet = ref(false)
+const showShareSheet = ref(false)
+const draftVisibility = ref<CollectionVisibility>('private')
+const visibilitySaving = ref(false)
+const visibilityError = ref<string | null>(null)
+const linkCopied = ref(false)
+
+const shareLink = computed(() => {
+  const resolved = router.resolve({
+    path: '/collections-editing-support/public',
+    query: { collection: collectionName.value },
+  })
+  if (typeof window === 'undefined') return resolved.href
+  return new URL(resolved.href, window.location.origin).href
+})
+
+const shareButtonLabel = 'Share collection'
+
+const copyLinkLabel = computed(() =>
+  linkCopied.value ? 'Link copied' : 'Copy link',
+)
+
+const layoutToggleIcon = computed(() =>
+  collectionView.value === 'grid' ? cdxIconListBullet : cdxIconLayout,
+)
+
+const layoutToggleLabel = computed(() =>
+  collectionView.value === 'grid' ? 'Switch to list view' : 'Switch to grid view',
+)
+
+function toggleCollectionView() {
+  collectionView.value = collectionView.value === 'grid' ? 'list' : 'grid'
+}
 
 const DEFAULT_DATA_OPTIONS: DataOptions = {
   views: false,
@@ -90,9 +144,10 @@ const dataOptions = ref<DataOptions>({ ...DEFAULT_DATA_OPTIONS })
 
 const draftDataOptions = ref<DataOptions>({ ...DEFAULT_DATA_OPTIONS })
 
-const COLLECTION_MENU_ITEMS: MenuButtonItemData[] = [
+const collectionMenuItems: MenuButtonItemData[] = [
   { value: 'customize-data', label: 'Customize data' },
   { value: 'rename', label: 'Rename collection' },
+  { value: 'visibility', label: 'Edit visibility' },
   { value: 'delete', label: 'Delete collection', action: 'destructive' },
 ]
 
@@ -138,8 +193,62 @@ function onCollectionMenuAction(action: string | null) {
   if (!action) return
   if (action === 'customize-data') {
     openDataDialog()
+  } else if (action === 'visibility') {
+    openVisibilitySheet()
   }
   collectionMenuAction.value = null
+}
+
+function loadVisibility() {
+  visibility.value = getCollectionVisibility(collectionName.value)
+}
+
+function openVisibilitySheet() {
+  draftVisibility.value = visibility.value
+  visibilityError.value = null
+  showVisibilitySheet.value = true
+}
+
+function closeVisibilitySheet() {
+  showVisibilitySheet.value = false
+  draftVisibility.value = visibility.value
+  visibilityError.value = null
+}
+
+async function saveVisibility() {
+  visibilitySaving.value = true
+  visibilityError.value = null
+  try {
+    await saveCollectionVisibility(collectionName.value, draftVisibility.value)
+    visibility.value = draftVisibility.value
+    if (visibility.value === 'private') {
+      linkCopied.value = false
+    }
+    closeVisibilitySheet()
+  } catch {
+    visibilityError.value = 'Could not save visibility. Please try again.'
+  } finally {
+    visibilitySaving.value = false
+  }
+}
+
+async function copyShareLink() {
+  try {
+    await navigator.clipboard.writeText(shareLink.value)
+    linkCopied.value = true
+  } catch {
+    linkCopied.value = false
+  }
+}
+
+function openShareSheet() {
+  linkCopied.value = false
+  showShareSheet.value = true
+}
+
+function closeShareSheet() {
+  showShareSheet.value = false
+  linkCopied.value = false
 }
 
 function hasVisibleSignals(options: DataOptions): boolean {
@@ -189,6 +298,7 @@ async function fetchSavedArticle(title: string, index: number): Promise<SavedArt
 
 async function loadArticles() {
   loading.value = true
+  loadVisibility()
   const titles = getCollectionArticles(collectionName.value)
   articles.value = await Promise.all(titles.map((title, index) => fetchSavedArticle(title, index)))
   loading.value = false
@@ -211,17 +321,39 @@ watch(collectionName, loadArticles)
           <a href="#" class="ces-saved__nav-link">All items</a>
           <a href="#" class="ces-saved__nav-link">Collections</a>
         </div>
-        <CdxMenuButton
-          v-model:selected="collectionMenuAction"
-          class="ces-saved__configure"
-          weight="quiet"
-          :menu-items="COLLECTION_MENU_ITEMS"
-          :menu-config="{ placement: 'bottom-end' }"
-          aria-label="Collection options"
-          @update:selected="onCollectionMenuAction"
-        >
-          <CdxIcon :icon="cdxIconConfigure" />
-        </CdxMenuButton>
+        <div class="ces-saved__nav-actions">
+          <CdxButton
+            v-if="isOwner && visibility === 'public'"
+            class="ces-saved__share"
+            weight="quiet"
+            :icon-only="true"
+            :aria-label="shareButtonLabel"
+            @click="openShareSheet"
+          >
+            <CdxIcon :icon="cdxIconShare" />
+          </CdxButton>
+          <CdxButton
+            class="ces-saved__layout"
+            weight="quiet"
+            :icon-only="true"
+            :aria-label="layoutToggleLabel"
+            @click="toggleCollectionView"
+          >
+            <CdxIcon :icon="layoutToggleIcon" />
+          </CdxButton>
+          <CdxMenuButton
+            v-if="isOwner"
+            v-model:selected="collectionMenuAction"
+            class="ces-saved__edit"
+            weight="quiet"
+            :menu-items="collectionMenuItems"
+            :menu-config="{ placement: 'bottom-end' }"
+            aria-label="Edit collection"
+            @update:selected="onCollectionMenuAction"
+          >
+            <CdxIcon :icon="cdxIconEdit" />
+          </CdxMenuButton>
+        </div>
       </nav>
 
       <p class="ces-saved__sort">Sorted by most recent</p>
@@ -231,6 +363,31 @@ watch(collectionName, loadArticles)
       <p v-else-if="!articles.length" class="ces-saved__empty">
         No articles in this collection yet.
       </p>
+
+      <ul
+        v-else-if="collectionView === 'list'"
+        class="ces-saved__rows"
+        role="list"
+      >
+        <li v-for="article in articles" :key="article.title" class="ces-saved__row">
+          <CdxThumbnail
+            class="ces-saved__row-thumb"
+            :thumbnail="article.thumbnail"
+            :placeholder-icon="cdxIconImage"
+          />
+          <div class="ces-saved__row-body">
+            <a
+              class="ces-saved__row-title"
+              :href="article.url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ article.title }}</a>
+            <p v-if="article.description" class="ces-saved__row-description">
+              {{ article.description }}
+            </p>
+          </div>
+        </li>
+      </ul>
 
       <ul v-else class="ces-saved__list" role="list">
         <li v-for="article in articles" :key="article.title" class="ces-saved__item">
@@ -368,6 +525,114 @@ watch(collectionName, loadArticles)
         </div>
       </template>
     </CdxDialog>
+
+    <Transition name="ces-sheet">
+      <div
+        v-if="showVisibilitySheet"
+        class="ces-saved__sheet-backdrop"
+        @click.self="closeVisibilitySheet"
+      >
+        <div
+          class="ces-saved__sheet"
+          role="dialog"
+          aria-labelledby="ces-visibility-title"
+        >
+          <div class="ces-saved__sheet-header">
+            <h2 id="ces-visibility-title" class="ces-saved__sheet-title">
+              Edit visibility
+            </h2>
+            <CdxButton
+              weight="quiet"
+              :icon-only="true"
+              aria-label="Close"
+              @click="closeVisibilitySheet"
+            >
+              <CdxIcon :icon="cdxIconClose" />
+            </CdxButton>
+          </div>
+
+          <fieldset class="ces-saved__visibility-options">
+            <legend class="ces-saved__visibility-legend">Collection visibility</legend>
+
+            <div class="ces-saved__visibility-option">
+              <CdxRadio v-model="draftVisibility" input-value="private">
+                Private
+              </CdxRadio>
+              <p class="ces-saved__visibility-desc">
+                Only you can see this collection.
+              </p>
+            </div>
+
+            <div class="ces-saved__visibility-option">
+              <CdxRadio v-model="draftVisibility" input-value="public">
+                Public
+              </CdxRadio>
+              <p class="ces-saved__visibility-desc">
+                Anyone can find your collection through search. You can share your
+                collection with others.
+              </p>
+            </div>
+          </fieldset>
+
+          <CdxMessage
+            v-if="visibilityError"
+            type="error"
+            class="ces-saved__sheet-error"
+          >
+            {{ visibilityError }}
+          </CdxMessage>
+
+          <CdxButton
+            class="ces-saved__sheet-save"
+            weight="primary"
+            action="progressive"
+            :disabled="visibilitySaving"
+            @click="saveVisibility"
+          >
+            Save
+          </CdxButton>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="ces-sheet">
+      <div
+        v-if="showShareSheet"
+        class="ces-saved__sheet-backdrop"
+        @click.self="closeShareSheet"
+      >
+        <div
+          class="ces-saved__sheet"
+          role="dialog"
+          aria-labelledby="ces-share-title"
+        >
+          <div class="ces-saved__sheet-header">
+            <h2 id="ces-share-title" class="ces-saved__sheet-title">
+              Share collection
+            </h2>
+            <CdxButton
+              weight="quiet"
+              :icon-only="true"
+              aria-label="Close"
+              @click="closeShareSheet"
+            >
+              <CdxIcon :icon="cdxIconClose" />
+            </CdxButton>
+          </div>
+
+          <a class="ces-saved__share-link" :href="shareLink">{{ shareLink }}</a>
+
+          <CdxButton
+            class="ces-saved__sheet-save"
+            weight="primary"
+            action="progressive"
+            @click="copyShareLink"
+          >
+            {{ copyLinkLabel }}
+          </CdxButton>
+        </div>
+      </div>
+    </Transition>
   </ChromeWrapper>
 </template>
 
@@ -398,8 +663,207 @@ watch(collectionName, loadArticles)
   gap: var(--spacing-100);
 }
 
-.ces-saved__configure {
+.ces-saved__nav-actions {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+  gap: var(--spacing-25);
+}
+
+.ces-saved__layout,
+.ces-saved__edit,
+.ces-saved__share {
+  flex-shrink: 0;
+}
+
+.ces-saved__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ces-saved__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-75);
+  padding: var(--spacing-75) 0;
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.ces-saved__row:last-child {
+  border-bottom: none;
+}
+
+.ces-saved__row-thumb {
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0;
+}
+
+.ces-saved__row-thumb:deep(.cdx-thumbnail) {
+  display: flex;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0;
+}
+
+.ces-saved__row-thumb:deep(.cdx-thumbnail__image),
+.ces-saved__row-thumb:deep(.cdx-thumbnail__placeholder) {
+  width: 4.5rem;
+  height: 4.5rem;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  border-radius: var(--border-radius-base);
+}
+
+.ces-saved__row-thumb:deep(.cdx-thumbnail__placeholder__icon) {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.ces-saved__row-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--spacing-25);
+  min-width: 0;
+}
+
+.ces-saved__row-title {
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-medium);
+  color: var(--color-base);
+  text-decoration: none;
+}
+
+.ces-saved__row-title:hover {
+  text-decoration: underline;
+}
+
+.ces-saved__row-description {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
+.ces-saved__sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+.ces-saved__sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-100);
+  width: 100%;
+  max-height: 85vh;
+  padding: var(--spacing-100);
+  border-radius: var(--border-radius-base) var(--border-radius-base) 0 0;
+  background-color: var(--background-color-base);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.ces-saved__sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-100);
+}
+
+.ces-saved__sheet-title {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-large);
+  color: var(--color-base);
+}
+
+.ces-saved__visibility-options {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.ces-saved__visibility-legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ces-saved__visibility-option + .ces-saved__visibility-option {
+  margin-top: var(--spacing-100);
+}
+
+.ces-saved__visibility-desc {
+  margin: var(--spacing-25) 0 0 calc(var(--spacing-100) + var(--spacing-50));
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-subtle);
+}
+
+.ces-saved__sheet-error {
+  margin: 0;
+}
+
+.ces-saved__sheet-save:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
+}
+
+.ces-saved__share-link {
+  display: block;
+  margin: 0;
+  padding: var(--spacing-75);
+  border: var(--border-width-base) solid var(--border-color-base);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-neutral-subtle);
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  color: var(--color-progressive);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ces-sheet-enter-active,
+.ces-sheet-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.ces-sheet-enter-active .ces-saved__sheet,
+.ces-sheet-leave-active .ces-saved__sheet {
+  transition: transform 0.2s ease;
+}
+
+.ces-sheet-enter-from,
+.ces-sheet-leave-to {
+  opacity: 0;
+}
+
+.ces-sheet-enter-from .ces-saved__sheet,
+.ces-sheet-leave-to .ces-saved__sheet {
+  transform: translateY(100%);
 }
 
 .ces-saved__nav-link {

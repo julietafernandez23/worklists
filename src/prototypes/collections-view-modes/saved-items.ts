@@ -8,6 +8,14 @@ const DEFAULT_COLLECTION_ARTICLES: Record<string, string[]> = {
   'Articles on bands I want to edit': ['The Strokes', 'Boygenius'],
 }
 
+const DEFAULT_COLLECTION_OWNERS: Record<string, string> = {
+  'Articles on bands I want to edit': 'LittleBird',
+}
+
+const DEFAULT_COLLECTION_VISIBILITY: Record<string, CollectionVisibility> = {
+  'Articles on bands I want to edit': 'public',
+}
+
 type SavedItemsMap = Record<string, string[]>
 
 function loadSavedItems(): SavedItemsMap {
@@ -61,7 +69,11 @@ function loadVisibilityMap(): VisibilityMap {
 }
 
 export function getCollectionVisibility(collection: string): CollectionVisibility {
-  return loadVisibilityMap()[collection] ?? 'private'
+  return loadVisibilityMap()[collection] ?? DEFAULT_COLLECTION_VISIBILITY[collection] ?? 'private'
+}
+
+export function getCollectionOwner(collection: string): string {
+  return DEFAULT_COLLECTION_OWNERS[collection] ?? 'LittleBird'
 }
 
 export async function saveCollectionVisibility(
