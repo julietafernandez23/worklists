@@ -1,7 +1,54 @@
+export interface EventWorklistOption {
+  id: string
+  label: string
+  /** Prototype route when a worklist page exists in ProtoWiki. */
+  route: string | null
+  /** Whether the current user is registered for the event (demo flag). */
+  isRegistered: boolean
+}
+
+export const DEFAULT_EVENT_WORKLIST_ID = 'wiki-loves-earth-2026'
+
+/** @deprecated Use getEventWorklistOption(DEFAULT_EVENT_WORKLIST_ID) instead. */
 export const EVENT_WORKLIST_LABEL = 'Wiki Loves Earth 2026'
+
+/** @deprecated Use getEventWorklistRoute(DEFAULT_EVENT_WORKLIST_ID) instead. */
 export const EVENT_WORKLIST_ROUTE = '/worklist-cards-v2'
 
-const STORAGE_KEY = 'protowiki:wiki-loves-earth-2026-worklist'
+export const EVENT_WORKLIST_OPTIONS: EventWorklistOption[] = [
+  {
+    id: DEFAULT_EVENT_WORKLIST_ID,
+    label: 'Wiki Loves Earth 2026',
+    route: '/worklist-cards-v2',
+    isRegistered: true,
+  },
+  {
+    id: 'art-and-feminism-2026',
+    label: 'Art and Feminism 2026',
+    route: null,
+    isRegistered: false,
+  },
+  {
+    id: 'wiki-loves-monuments-2026',
+    label: 'Wiki Loves Monuments 2026',
+    route: null,
+    isRegistered: false,
+  },
+  {
+    id: 'librarians-editathon-2026',
+    label: 'Librarians Editathon 2026',
+    route: null,
+    isRegistered: true,
+  },
+  {
+    id: 'women-in-red',
+    label: 'Women in Red',
+    route: null,
+    isRegistered: false,
+  },
+]
+
+const LEGACY_STORAGE_KEY = 'protowiki:wiki-loves-earth-2026-worklist'
 
 export const DEFAULT_WORKLIST_ARTICLES = [
   'Coral bleaching',
@@ -13,9 +60,19 @@ export const DEFAULT_WORKLIST_ARTICLES = [
   'Biodiversity',
 ]
 
-function loadStoredTitles(): string[] | null {
+function storageKey(eventId: string): string {
+  return `protowiki:event-worklist:${eventId}`
+}
+
+function loadStoredTitles(eventId: string): string[] | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const key = storageKey(eventId)
+    let raw = sessionStorage.getItem(key)
+
+    if (!raw && eventId === DEFAULT_EVENT_WORKLIST_ID) {
+      raw = sessionStorage.getItem(LEGACY_STORAGE_KEY)
+    }
+
     if (!raw) return null
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return null
@@ -25,19 +82,47 @@ function loadStoredTitles(): string[] | null {
   }
 }
 
-export function getWorklistArticleTitles(): string[] {
-  return loadStoredTitles() ?? [...DEFAULT_WORKLIST_ARTICLES]
+export function getEventWorklistOption(eventId: string): EventWorklistOption | undefined {
+  return EVENT_WORKLIST_OPTIONS.find((event) => event.id === eventId)
 }
 
-export function saveWorklistArticleTitles(titles: string[]): void {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(titles))
+export function getEventWorklistRoute(eventId: string): string | null {
+  return getEventWorklistOption(eventId)?.route ?? null
 }
 
-export function addArticlesToWorklist(titles: string[]): {
+export function searchEventWorklists(query: string): EventWorklistOption[] {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return [...EVENT_WORKLIST_OPTIONS]
+
+  return EVENT_WORKLIST_OPTIONS.filter((event) =>
+    event.label.toLowerCase().includes(normalized),
+  )
+}
+
+export function getWorklistArticleTitles(
+  eventId: string = DEFAULT_EVENT_WORKLIST_ID,
+): string[] {
+  return loadStoredTitles(eventId) ?? [...DEFAULT_WORKLIST_ARTICLES]
+}
+
+export function saveWorklistArticleTitles(
+  titles: string[],
+  eventId: string = DEFAULT_EVENT_WORKLIST_ID,
+): void {
+  sessionStorage.setItem(storageKey(eventId), JSON.stringify(titles))
+  if (eventId === DEFAULT_EVENT_WORKLIST_ID) {
+    sessionStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(titles))
+  }
+}
+
+export function addArticlesToWorklist(
+  titles: string[],
+  eventId: string = DEFAULT_EVENT_WORKLIST_ID,
+): {
   added: string[]
   skipped: string[]
 } {
-  const current = getWorklistArticleTitles()
+  const current = getWorklistArticleTitles(eventId)
   const seen = new Set(current.map((title) => title.toLowerCase()))
   const added: string[] = []
   const skipped: string[] = []
@@ -52,7 +137,7 @@ export function addArticlesToWorklist(titles: string[]): {
   }
 
   if (added.length) {
-    saveWorklistArticleTitles([...added, ...current])
+    saveWorklistArticleTitles([...added, ...current], eventId)
   }
 
   return { added, skipped }

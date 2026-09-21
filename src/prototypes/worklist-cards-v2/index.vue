@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   CdxButton,
   CdxDialog,
@@ -20,16 +21,14 @@ import {
   cdxIconCode,
   cdxIconConfigure,
   cdxIconEdit,
-  cdxIconHalfStar,
   cdxIconHistory,
   cdxIconLightbulb,
-  cdxIconStar,
   cdxIconTrash,
-  cdxIconUnStar,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import SpecialPageWrapper from '@/components/SpecialPageWrapper.vue'
 import {
+  DEFAULT_EVENT_WORKLIST_ID,
   getWorklistArticleTitles,
   saveWorklistArticleTitles,
 } from '@/lib/event-worklist-storage'
@@ -70,6 +69,15 @@ interface ArticleCard {
   workingOn: string[]
   note: ArticleNote | null
 }
+
+const route = useRoute()
+
+const eventWorklistId = computed(() => {
+  const value = route.query.event
+  return typeof value === 'string' && value.trim()
+    ? value.trim()
+    : DEFAULT_EVENT_WORKLIST_ID
+})
 
 const CURRENT_USERNAME = 'LittleBird'
 
@@ -128,32 +136,30 @@ function qualityBand(score: number): QualityBand {
   return 'low'
 }
 
-function qualityChipIcon(score: number) {
-  if (score >= HIGH_QUALITY_THRESHOLD) return cdxIconUnStar
-  if (score >= MEDIUM_QUALITY_THRESHOLD) return cdxIconHalfStar
-  return cdxIconStar
-}
-
 const VIEW_COUNTS = [20, 5, 35, 12, 8, 15, 120]
 
-const SUGGESTION_SETS = [
-  ['Add a citation', 'Add a link'],
-  ['Remove duplicated link'],
-  ['Revise tone'],
-  ['Add a citation', 'Add a link'],
-  ['Add a citation', 'Add a link'],
-  ['Add a citation', 'Add a link'],
-  ['Add a citation', 'Add a link'],
-]
+const RECOMMENDED_TASKS = [
+  'Needs more references',
+  'Needs more internal wikilinks',
+  'Needs clearer section headings',
+  'Needs images or other media',
+  'Needs an infobox',
+  'Needs more relevant categories',
+  'Needs expansion of content',
+  'Needs a maintenance review',
+] as const
 
 const SUGGESTION_COUNTS = [2, 1, 3, 82, 2, 2, 4]
 
-const MAX_VISIBLE_SUGGESTIONS = 2
+const MAX_VISIBLE_SUGGESTIONS = 1
 
 function fakeSuggestions(index: number): string[] {
-  const types = SUGGESTION_SETS[index % SUGGESTION_SETS.length]
   const count = SUGGESTION_COUNTS[index % SUGGESTION_COUNTS.length]
-  return Array.from({ length: count }, (_, i) => types[i % types.length])
+  const start = index % RECOMMENDED_TASKS.length
+  return Array.from(
+    { length: count },
+    (_, i) => RECOMMENDED_TASKS[(start + i) % RECOMMENDED_TASKS.length],
+  )
 }
 
 function uniqueSuggestions(suggestions: string[]): string[] {
@@ -172,16 +178,13 @@ function visibleSuggestions(suggestions: string[]): string[] {
 }
 
 function extraSuggestionsCount(suggestions: string[]): number {
-  const visible = visibleSuggestions(suggestions)
-  return Math.max(0, suggestions.length - visible.length)
+  const unique = uniqueSuggestions(suggestions)
+  return Math.max(0, unique.length - MAX_VISIBLE_SUGGESTIONS)
 }
 
 const SUGGESTION_FILTER_OPTIONS: MenuItemData[] = [
-  { value: 'all', label: 'All suggestions' },
-  { value: 'Add a citation', label: 'Add a citation' },
-  { value: 'Add a link', label: 'Add a link' },
-  { value: 'Remove duplicated link', label: 'Remove duplicated link' },
-  { value: 'Revise tone', label: 'Revise tone' },
+  { value: 'all', label: 'All tasks' },
+  ...RECOMMENDED_TASKS.map(task => ({ value: task, label: task })),
 ]
 
 const SORT_OPTIONS: MenuItemData[] = [
@@ -206,8 +209,14 @@ function fakeViews(index: number): string {
 
 const QUALITY_CHIP_STATUS = 'subtle' as const
 
+const IMPACT_OPPORTUNITY_LABEL: Record<QualityBand, string> = {
+  low: 'High impact opportunity',
+  medium: 'Medium impact opportunity',
+  high: 'Low impact opportunity',
+}
+
 function qualityLabel(score: number): string {
-  return `${score}% quality`
+  return IMPACT_OPPORTUNITY_LABEL[qualityBand(score)]
 }
 
 function shortViewsLabel(viewsCount: number): string {
@@ -415,7 +424,7 @@ function confirmRemove(title: string) {
 function onRemoveConfirmed() {
   if (!pendingRemoveTitle.value) return
   cards.value = cards.value.filter((card) => card.title !== pendingRemoveTitle.value)
-  saveWorklistArticleTitles(cards.value.map((card) => card.title))
+  saveWorklistArticleTitles(cards.value.map((card) => card.title), eventWorklistId.value)
   showRemoveDialog.value = false
   pendingRemoveTitle.value = null
 }
@@ -508,7 +517,7 @@ async function onAdd() {
     ),
   )
   cards.value = [...cards.value, ...added]
-  saveWorklistArticleTitles(cards.value.map((card) => card.title))
+  saveWorklistArticleTitles(cards.value.map((card) => card.title), eventWorklistId.value)
   addPending.value = false
   showAddDialog.value = false
 }
@@ -618,13 +627,18 @@ function resetFilters() {
   suggestionFilter.value = 'all'
 }
 
-onMounted(async () => {
-  const titles = getWorklistArticleTitles()
+async function loadWorklistCards() {
+  loading.value = true
+  const titles = getWorklistArticleTitles(eventWorklistId.value)
   cards.value = await Promise.all(
     titles.map((title, index) => fetchArticleCard(title, index, titles.length)),
   )
   loading.value = false
-})
+}
+
+onMounted(loadWorklistCards)
+
+watch(eventWorklistId, loadWorklistCards)
 </script>
 
 <template>
@@ -710,10 +724,7 @@ onMounted(async () => {
                       class="wc2__quality-chip"
                       :class="`wc2__quality-chip--${qualityBand(card.qualityScore)}`"
                     >
-                      <CdxInfoChip
-                        :status="QUALITY_CHIP_STATUS"
-                        :icon="qualityChipIcon(card.qualityScore)"
-                      >
+                      <CdxInfoChip :status="QUALITY_CHIP_STATUS">
                         {{ qualityLabel(card.qualityScore) }}
                       </CdxInfoChip>
                     </div>
@@ -830,8 +841,16 @@ onMounted(async () => {
     @primary="onAdd"
   >
     <div class="wc2__dialog-body">
+      <p class="wc2__add-dialog-hint">
+        Search for article titles, or paste a list below. For pages outside main
+        article space, include the namespace prefix (for example
+        <span class="wc2__add-dialog-hint-code">User:Example</span> or
+        <span class="wc2__add-dialog-hint-code">Collection:Birds I want to edit</span>).
+      </p>
+
       <CdxField>
         <template #label>Search Wikipedia</template>
+        <template #description>Article titles in main namespace</template>
         <div :class="{ 'wc2__lookup--redlink': lookupIsRedLink }">
           <CdxLookup
             v-model:selected="lookupSelected"
@@ -848,11 +867,13 @@ onMounted(async () => {
 
       <CdxField>
         <template #label>List pages</template>
-        <template #description>One title per line</template>
+        <template #description>
+          One title per line. Use a namespace prefix when the page is not a mainspace article.
+        </template>
         <CdxTextArea
           v-model="selectedPages"
           :rows="5"
-          :placeholder="'Earth\nMoon\nJupiter'"
+          :placeholder="'Earth\nUser:Example\nCollection:Birds I want to edit'"
           class="wc2__pages-textarea"
         />
       </CdxField>
@@ -903,11 +924,11 @@ onMounted(async () => {
       </CdxField>
 
       <CdxField class="wc2__filter-dialog-field">
-        <template #label>Edit suggestions</template>
+        <template #label>Recommended tasks</template>
         <CdxSelect
           v-model:selected="draftSuggestionFilter"
           :menu-items="SUGGESTION_FILTER_OPTIONS"
-          default-label="All suggestions"
+          default-label="All tasks"
         />
       </CdxField>
     </div>
@@ -1196,14 +1217,6 @@ onMounted(async () => {
   color: var(--color-base);
 }
 
-.wc2__quality-chip:deep(.cdx-info-chip__icon--vue) {
-  color: var(--color-subtle);
-}
-
-.wc2__quality-chip--high:deep(.cdx-info-chip__icon--vue) {
-  color: var(--color-base);
-}
-
 .wc2__card-remove {
   flex-shrink: 0;
   margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 0;
@@ -1356,6 +1369,20 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-75);
+}
+
+.wc2__add-dialog-hint {
+  margin: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
+.wc2__add-dialog-hint-code {
+  font-family: var(--font-family-monospace, monospace);
+  color: var(--color-base);
 }
 
 .wc2__dialog-or + * {

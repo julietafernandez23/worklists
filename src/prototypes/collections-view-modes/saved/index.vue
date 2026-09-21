@@ -4,29 +4,32 @@ import { RouterLink, useRoute } from 'vue-router'
 import {
   CdxButton,
   CdxDialog,
+  CdxField,
   CdxIcon,
   CdxMenuButton,
+  CdxMessage,
   CdxProgressBar,
+  CdxSelect,
   CdxThumbnail,
 } from '@wikimedia/codex'
-import type { MenuButtonItemData } from '@wikimedia/codex'
+import type { MenuButtonItemData, MenuItemData } from '@wikimedia/codex'
 import {
   cdxIconArrowDown,
   cdxIconArrowUp,
   cdxIconChartLine,
-  cdxIconCheck,
-  cdxIconClose,
   cdxIconEdit,
   cdxIconImage,
   cdxIconLayout,
   cdxIconLightbulb,
+  cdxIconShare,
 } from '@wikimedia/codex-icons'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
 import { useConfig } from '@/composables/useConfig'
 import {
   addArticlesToWorklist,
-  EVENT_WORKLIST_LABEL,
-  EVENT_WORKLIST_ROUTE,
+  EVENT_WORKLIST_OPTIONS,
+  getEventWorklistOption,
+  getEventWorklistRoute,
 } from '@/lib/event-worklist-storage'
 import { getCollectionArticles } from '../saved-items'
 
@@ -85,45 +88,47 @@ const collectionView = ref<CollectionView>('grid')
 const layoutMenuAction = ref<string | null>(null)
 const collectionMenuAction = ref<string | null>(null)
 
-const showWorklistDialog = ref(false)
-const worklistDialogPending = ref(false)
-const worklistToast = ref<{ addedCount: number; skippedCount: number } | null>(null)
+const showExportDialog = ref(false)
+const exportDialogPending = ref(false)
+/** Dialog-only draft — mirrors filter-dialog draft fields in worklist-cards-v2. */
+const draftEventId = ref<string | null>(null)
+
+const eventMenuItems: MenuItemData[] = EVENT_WORKLIST_OPTIONS.map((event) => ({
+  value: event.id,
+  label: event.label,
+}))
+
+const exportToast = ref<{
+  eventId: string
+  eventLabel: string
+  eventRoute: string | null
+  addedCount: number
+  skippedCount: number
+} | null>(null)
 
 const collectionMenuItems: MenuButtonItemData[] = [
-  { value: 'add-to-worklist', label: 'Add to event worklist' },
   { value: 'rename', label: 'Rename collection' },
   { value: 'delete', label: 'Delete collection', action: 'destructive' },
 ]
 
-const collectionArticleTitles = computed(() =>
-  getCollectionArticles(collectionName.value),
-)
-
-const worklistDialogMessage = computed(() => {
-  const count = collectionArticleTitles.value.length
-  const noun = count === 1 ? 'article' : 'articles'
-  return `Add ${count} ${noun} from this collection to the ${EVENT_WORKLIST_LABEL} event worklist? Articles already on the worklist will be skipped.`
+const hasArticlesToExport = computed(() => {
+  if (articles.value.length > 0) return true
+  return getCollectionArticles(collectionName.value).length > 0
 })
 
-const worklistDialogPrimaryAction = computed(() => ({
-  label: 'Add to worklist',
-  actionType: 'progressive' as const,
-  disabled: !collectionArticleTitles.value.length || worklistDialogPending.value,
-}))
+const exportSubmitDisabled = computed(
+  () =>
+    exportDialogPending.value
+    || draftEventId.value == null
+    || !hasArticlesToExport.value,
+)
 
-const worklistToastMessage = computed(() => {
-  if (!worklistToast.value) return ''
-  const { addedCount, skippedCount } = worklistToast.value
-  if (!addedCount) {
-    return skippedCount === 1
-      ? 'That article is already on the event worklist.'
-      : 'Those articles are already on the event worklist.'
+const exportToastLink = computed(() => {
+  if (!exportToast.value?.eventRoute) return null
+  return {
+    path: exportToast.value.eventRoute,
+    query: { event: exportToast.value.eventId },
   }
-  const addedNoun = addedCount === 1 ? 'article has' : 'articles have'
-  if (!skippedCount) {
-    return `${addedCount} ${addedNoun} been added to the event worklist.`
-  }
-  return `${addedCount} ${addedNoun} been added to the event worklist (${skippedCount} skipped).`
 })
 
 function fakeViews(index: number): string {
@@ -143,29 +148,44 @@ function onLayoutMenuAction(action: string | null) {
   layoutMenuAction.value = null
 }
 
-function onCollectionMenuAction(action: string | null) {
-  if (action === 'add-to-worklist') {
-    showWorklistDialog.value = true
-  }
-  collectionMenuAction.value = null
+function openExportDialog() {
+  draftEventId.value = null
+  showExportDialog.value = true
 }
 
-function closeWorklistDialog() {
-  showWorklistDialog.value = false
+function onDraftEventSelected(eventId: string | null) {
+  draftEventId.value = eventId
 }
 
-async function confirmAddToWorklist() {
-  if (!collectionArticleTitles.value.length) {
-    showWorklistDialog.value = false
-    return
-  }
+function closeExportDialog() {
+  showExportDialog.value = false
+}
 
-  worklistDialogPending.value = true
+function exportArticleTitles(): string[] {
+  if (articles.value.length > 0) {
+    return articles.value.map((article) => article.title)
+  }
+  return getCollectionArticles(collectionName.value)
+}
+
+async function confirmExport() {
+  const titles = exportArticleTitles()
+  const eventId = draftEventId.value
+  if (!titles.length || !eventId) return
+
+  exportDialogPending.value = true
   await new Promise((resolve) => setTimeout(resolve, 350))
-  const { added, skipped } = addArticlesToWorklist(collectionArticleTitles.value)
-  worklistDialogPending.value = false
-  showWorklistDialog.value = false
-  worklistToast.value = { addedCount: added.length, skippedCount: skipped.length }
+  const event = getEventWorklistOption(eventId)
+  const { added, skipped } = addArticlesToWorklist(titles, eventId)
+  exportDialogPending.value = false
+  showExportDialog.value = false
+  exportToast.value = {
+    eventId,
+    eventLabel: event?.label ?? 'Event worklist',
+    eventRoute: getEventWorklistRoute(eventId),
+    addedCount: added.length,
+    skippedCount: skipped.length,
+  }
 }
 
 async function fetchSavedArticle(title: string, index: number): Promise<SavedArticle> {
@@ -237,6 +257,16 @@ watch(collectionName, loadArticles)
           >
             <CdxIcon :icon="cdxIconLayout" />
           </CdxMenuButton>
+          <CdxButton
+            v-if="isOwner"
+            class="cvm-saved__export"
+            weight="quiet"
+            :icon-only="true"
+            aria-label="Export to event worklist"
+            @click="openExportDialog"
+          >
+            <CdxIcon :icon="cdxIconShare" />
+          </CdxButton>
           <CdxMenuButton
             v-if="isOwner"
             v-model:selected="collectionMenuAction"
@@ -245,7 +275,6 @@ watch(collectionName, loadArticles)
             :menu-items="collectionMenuItems"
             :menu-config="{ placement: 'bottom-end' }"
             aria-label="Edit collection"
-            @update:selected="onCollectionMenuAction"
           >
             <CdxIcon :icon="cdxIconEdit" />
           </CdxMenuButton>
@@ -361,50 +390,70 @@ watch(collectionName, loadArticles)
       </ul>
     </main>
 
-    <div
-      v-if="worklistToast"
-      class="cvm-saved__worklist-toast"
-      role="status"
-      aria-live="polite"
+    <CdxMessage
+      v-if="exportToast"
+      type="success"
+      :allow-user-dismiss="true"
+      class="cvm-saved__export-message"
+      @user-dismissed="exportToast = null"
     >
-      <span class="cvm-saved__worklist-toast-icon" aria-hidden="true">
-        <CdxIcon :icon="cdxIconCheck" />
-      </span>
-      <p class="cvm-saved__worklist-toast-message">
-        {{ worklistToastMessage }}
+      <template v-if="!exportToast.addedCount">
+        {{ exportToast.skippedCount === 1 ? 'That article is already on the' : 'Those articles are already on the' }}
         <RouterLink
-          v-if="worklistToast.addedCount > 0"
-          :to="EVENT_WORKLIST_ROUTE"
-          class="cvm-saved__worklist-toast-link"
-        >
-          View worklist
-        </RouterLink>
-      </p>
-      <CdxButton
-        weight="quiet"
-        :icon-only="true"
-        aria-label="Dismiss"
-        class="cvm-saved__worklist-toast-close"
-        @click="worklistToast = null"
-      >
-        <CdxIcon :icon="cdxIconClose" />
-      </CdxButton>
-    </div>
-  </ChromeWrapper>
+          v-if="exportToastLink"
+          :to="exportToastLink"
+          class="cvm-saved__export-message-link"
+        >{{ exportToast.eventLabel }}</RouterLink>
+        <span v-else>{{ exportToast.eventLabel }}</span>
+        worklist.
+      </template>
+      <template v-else>
+        {{ exportToast.addedCount }}
+        {{ exportToast.addedCount === 1 ? 'article has' : 'articles have' }}
+        been exported to
+        <RouterLink
+          v-if="exportToastLink"
+          :to="exportToastLink"
+          class="cvm-saved__export-message-link"
+        >{{ exportToast.eventLabel }}</RouterLink>
+        <span v-else>{{ exportToast.eventLabel }}</span>.
+        <template v-if="exportToast.skippedCount">
+          ({{ exportToast.skippedCount }} skipped)
+        </template>
+      </template>
+    </CdxMessage>
 
-  <CdxDialog
-    v-model:open="showWorklistDialog"
-    title="Add to event worklist"
-    close-button-label="Close"
-    :dismissable="!worklistDialogPending"
-    :primary-action="worklistDialogPrimaryAction"
-    @primary="confirmAddToWorklist"
-    @update:open="(open) => { if (!open) closeWorklistDialog() }"
-  >
-    <p class="cvm-saved__worklist-dialog-text">
-      {{ worklistDialogMessage }}
-    </p>
-  </CdxDialog>
+    <CdxDialog
+      v-model:open="showExportDialog"
+      title="Export to event worklist"
+      close-button-label="Close"
+      :dismissable="!exportDialogPending"
+      @update:open="(open) => { if (!open) closeExportDialog() }"
+    >
+      <CdxField>
+        <template #label>Event</template>
+        <CdxSelect
+          :selected="draftEventId"
+          :menu-items="eventMenuItems"
+          default-label="Choose an event"
+          @update:selected="onDraftEventSelected"
+        />
+      </CdxField>
+
+      <template #footer>
+        <CdxButton
+          :key="draftEventId ?? 'none'"
+          class="cvm-saved__export-dialog-submit"
+          action="progressive"
+          weight="primary"
+          :disabled="exportSubmitDisabled"
+          @click="confirmExport"
+        >
+          {{ exportDialogPending ? 'Exporting…' : 'Export' }}
+        </CdxButton>
+      </template>
+    </CdxDialog>
+  </ChromeWrapper>
 </template>
 
 <style scoped>
@@ -442,6 +491,7 @@ watch(collectionName, loadArticles)
 }
 
 .cvm-saved__layout,
+.cvm-saved__export,
 .cvm-saved__edit {
   flex-shrink: 0;
 }
@@ -466,57 +516,32 @@ watch(collectionName, loadArticles)
   color: var(--color-subtle);
 }
 
-.cvm-saved__worklist-dialog-text {
-  margin: 0;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  line-height: var(--line-height-medium);
-  color: var(--color-base);
+.cvm-saved__export-dialog-submit {
+  display: block;
+  width: 100%;
 }
 
-.cvm-saved__worklist-toast {
+.cvm-saved__export-dialog-submit:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
+}
+
+.cvm-saved__export-message {
   position: fixed;
   inset-inline: var(--spacing-100);
   bottom: var(--spacing-100);
   z-index: 100;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-75);
-  padding: var(--spacing-100);
-  border: var(--border-width-base) solid var(--border-color-subtle);
-  border-radius: var(--border-radius-base);
-  background-color: var(--background-color-base);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
-.cvm-saved__worklist-toast-icon {
-  flex-shrink: 0;
-  color: var(--color-success);
-}
-
-.cvm-saved__worklist-toast-message {
-  flex: 1 1 auto;
-  margin: 0;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  line-height: var(--line-height-medium);
-  color: var(--color-base);
-}
-
-.cvm-saved__worklist-toast-link {
-  display: inline-block;
-  margin-top: var(--spacing-25);
+.cvm-saved__export-message-link {
   color: var(--color-progressive);
+  font-weight: var(--font-weight-bold);
   text-decoration: none;
 }
 
-.cvm-saved__worklist-toast-link:hover {
+.cvm-saved__export-message-link:hover {
   text-decoration: underline;
-}
-
-.cvm-saved__worklist-toast-close {
-  flex-shrink: 0;
-  margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 0;
 }
 
 .cvm-saved__empty {
