@@ -841,16 +841,8 @@ watch(eventWorklistId, loadWorklistCards)
     @primary="onAdd"
   >
     <div class="wc2__dialog-body">
-      <p class="wc2__add-dialog-hint">
-        Search for article titles, or paste a list below. For pages outside main
-        article space, include the namespace prefix (for example
-        <span class="wc2__add-dialog-hint-code">User:Example</span> or
-        <span class="wc2__add-dialog-hint-code">Collection:Birds I want to edit</span>).
-      </p>
-
       <CdxField>
         <template #label>Search Wikipedia</template>
-        <template #description>Article titles in main namespace</template>
         <div :class="{ 'wc2__lookup--redlink': lookupIsRedLink }">
           <CdxLookup
             v-model:selected="lookupSelected"
@@ -867,13 +859,11 @@ watch(eventWorklistId, loadWorklistCards)
 
       <CdxField>
         <template #label>List pages</template>
-        <template #description>
-          One title per line. Use a namespace prefix when the page is not a mainspace article.
-        </template>
+        <template #description>One title per line</template>
         <CdxTextArea
           v-model="selectedPages"
           :rows="5"
-          :placeholder="'Earth\nUser:Example\nCollection:Birds I want to edit'"
+          :placeholder="'Earth\nMoon\nJupiter'"
           class="wc2__pages-textarea"
         />
       </CdxField>
@@ -1369,20 +1359,6 @@ watch(eventWorklistId, loadWorklistCards)
   display: flex;
   flex-direction: column;
   gap: var(--spacing-75);
-}
-
-.wc2__add-dialog-hint {
-  margin: 0;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-medium);
-  color: var(--color-subtle);
-}
-
-.wc2__add-dialog-hint-code {
-  font-family: var(--font-family-monospace, monospace);
-  color: var(--color-base);
 }
 
 .wc2__dialog-or + * {
