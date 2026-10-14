@@ -14,6 +14,7 @@ import {
   CdxTab,
   CdxTabs,
   CdxTextArea,
+  CdxThumbnail,
   CdxTooltip,
 } from '@wikimedia/codex'
 import type { MenuItemData } from '@wikimedia/codex'
@@ -24,6 +25,7 @@ import {
   cdxIconConfigure,
   cdxIconEdit,
   cdxIconHistory,
+  cdxIconImage,
   cdxIconLightbulb,
   cdxIconTrash,
 } from '@wikimedia/codex-icons'
@@ -69,11 +71,18 @@ interface ArticleNote {
   addedAt: Date
 }
 
+type ArticleThumbnail = {
+  url: string
+  width: number
+  height: number
+}
+
 interface ArticleCard {
   title: string
   description: string
   url: string
   wiki: string
+  thumbnail: ArticleThumbnail | null
   dateAdded: Date
   viewsPerMonth: string
   viewsCount: number
@@ -269,6 +278,18 @@ function shortViewsLabel(viewsCount: number): string {
   return `${viewsCount}k`
 }
 
+function thumbnailFromSummary(summary: {
+  thumbnail?: { source: string; width: number; height: number }
+}): ArticleThumbnail | null {
+  const thumb = summary.thumbnail
+  if (!thumb?.source) return null
+  return {
+    url: thumb.source,
+    width: thumb.width,
+    height: thumb.height,
+  }
+}
+
 function formatWikiDate(d: Date): string {
   return d.toLocaleString('en-US', {
     hour: '2-digit',
@@ -303,6 +324,7 @@ async function fetchArticleCard(
       url: summaryResult.content_urls?.desktop?.page
         ?? `https://${wikiHost}/wiki/${encodeURIComponent(wikiTitle)}`,
       wiki: wikiLabel,
+      thumbnail: thumbnailFromSummary(summaryResult),
       dateAdded,
       viewsPerMonth: fakeViews(index),
       viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
@@ -321,6 +343,7 @@ async function fetchArticleCard(
     description: '',
     url: `https://${wikiHost}/wiki/${encodeURIComponent(wikiTitle)}`,
     wiki: wikiLabel,
+    thumbnail: null,
     dateAdded,
     viewsPerMonth: fakeViews(index),
     viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
@@ -896,7 +919,7 @@ watch(eventWorklistId, loadWorklistCards)
                   </template>
                 </div>
 
-                <div class="wc2__card-content">
+                <div class="wc2__card-body">
                   <div class="wc2__card-header">
                     <div
                       class="wc2__quality-chip"
@@ -917,6 +940,14 @@ watch(eventWorklistId, loadWorklistCards)
                     </CdxButton>
                   </div>
 
+                  <div class="wc2__card-main">
+                    <CdxThumbnail
+                      class="wc2__card-thumb"
+                      :thumbnail="card.thumbnail"
+                      :placeholder-icon="cdxIconImage"
+                    />
+
+                    <div class="wc2__card-content">
                   <a
                     class="wc2__card-title"
                     :href="card.url"
@@ -996,6 +1027,8 @@ watch(eventWorklistId, loadWorklistCards)
                     <p class="wc2__card-note-meta">
                       {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
                     </p>
+                  </div>
+                    </div>
                   </div>
                 </div>
               </li>
@@ -1464,11 +1497,55 @@ watch(eventWorklistId, loadWorklistCards)
   color: var(--color-progressive);
 }
 
+.wc2__card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+  padding: var(--spacing-75);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wc2__card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-75);
+  min-width: 0;
+}
+
+.wc2__card-thumb {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  margin: 0;
+}
+
+.wc2__card-thumb:deep(.cdx-thumbnail) {
+  display: flex;
+  width: 3rem;
+  height: 3rem;
+  margin: 0;
+}
+
+.wc2__card-thumb:deep(.cdx-thumbnail__image),
+.wc2__card-thumb:deep(.cdx-thumbnail__placeholder) {
+  width: 3rem;
+  height: 3rem;
+  min-width: 0;
+  min-height: 0;
+  object-fit: cover;
+}
+
+.wc2__card-thumb:deep(.cdx-thumbnail__placeholder__icon) {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .wc2__card-content {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: var(--spacing-75);
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1477,7 +1554,8 @@ watch(eventWorklistId, loadWorklistCards)
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-50);
-  margin-bottom: var(--spacing-50);
+  width: 100%;
+  min-width: 0;
 }
 
 .wc2__quality-chip {
