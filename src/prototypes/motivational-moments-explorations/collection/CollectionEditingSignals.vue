@@ -34,8 +34,8 @@ const otherTasksSuffix = computed(() => otherSuggestedTasksSuffix(otherTaskCount
 <template>
   <div class="mme-collection-signals">
     <div
+      v-if="qualityBand(props.article.qualityScore) === 'low'"
       class="mme-collection-signals__chip"
-      :class="`mme-collection-signals__chip--${qualityBand(props.article.qualityScore)}`"
     >
       <CdxInfoChip :status="QUALITY_CHIP_STATUS">
         {{ impactOpportunityLabel(props.article.qualityScore) }}

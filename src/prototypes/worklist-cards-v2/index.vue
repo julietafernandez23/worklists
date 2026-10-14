@@ -920,11 +920,11 @@ watch(eventWorklistId, loadWorklistCards)
                 </div>
 
                 <div class="wc2__card-body">
-                  <div class="wc2__card-header">
-                    <div
-                      class="wc2__quality-chip"
-                      :class="`wc2__quality-chip--${qualityBand(card.qualityScore)}`"
-                    >
+                  <div
+                    v-if="qualityBand(card.qualityScore) === 'low'"
+                    class="wc2__card-header"
+                  >
+                    <div class="wc2__quality-chip">
                       <CdxInfoChip :status="QUALITY_CHIP_STATUS">
                         {{ qualityLabel(card.qualityScore) }}
                       </CdxInfoChip>
@@ -939,7 +939,6 @@ watch(eventWorklistId, loadWorklistCards)
                       <CdxIcon :icon="cdxIconTrash" />
                     </CdxButton>
                   </div>
-
                   <div class="wc2__card-main">
                     <CdxThumbnail
                       class="wc2__card-thumb"
@@ -948,7 +947,28 @@ watch(eventWorklistId, loadWorklistCards)
                     />
 
                     <div class="wc2__card-content">
+                  <div
+                    v-if="qualityBand(card.qualityScore) !== 'low'"
+                    class="wc2__card-title-row"
+                  >
+                    <a
+                      class="wc2__card-title"
+                      :href="card.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ card.title }}</a>
+                    <CdxButton
+                      weight="quiet"
+                      :icon-only="true"
+                      aria-label="Remove article"
+                      class="wc2__card-remove"
+                      @click="confirmRemove(card.title)"
+                    >
+                      <CdxIcon :icon="cdxIconTrash" />
+                    </CdxButton>
+                  </div>
                   <a
+                    v-else
                     class="wc2__card-title"
                     :href="card.url"
                     target="_blank"
@@ -957,6 +977,34 @@ watch(eventWorklistId, loadWorklistCards)
                   <p v-if="card.description" class="wc2__card-description">
                     {{ card.description }}
                   </p>
+
+                  <div v-if="card.note" class="wc2__card-note">
+                    <div class="wc2__card-note-header">
+                      <p class="wc2__card-note-label">Note</p>
+                      <div v-if="canEditNote(card)" class="wc2__card-note-actions">
+                        <CdxButton
+                          weight="quiet"
+                          :icon-only="true"
+                          aria-label="Edit note"
+                          @click="openNoteDialog(card, 'edit')"
+                        >
+                          <CdxIcon :icon="cdxIconEdit" />
+                        </CdxButton>
+                        <CdxButton
+                          weight="quiet"
+                          :icon-only="true"
+                          aria-label="Remove note"
+                          @click="removeNote(card)"
+                        >
+                          <CdxIcon :icon="cdxIconTrash" />
+                        </CdxButton>
+                      </div>
+                    </div>
+                    <p class="wc2__card-note-text" v-html="linkifyNote(card.note.text)" />
+                    <p class="wc2__card-note-meta">
+                      {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
+                    </p>
+                  </div>
 
                   <div class="wc2__card-meta">
                     <div class="wc2__meta-item">
@@ -999,34 +1047,6 @@ watch(eventWorklistId, loadWorklistCards)
                         </template>
                       </span>
                     </div>
-                  </div>
-
-                  <div v-if="card.note" class="wc2__card-note">
-                    <div class="wc2__card-note-header">
-                      <p class="wc2__card-note-label">Note</p>
-                      <div v-if="canEditNote(card)" class="wc2__card-note-actions">
-                        <CdxButton
-                          weight="quiet"
-                          :icon-only="true"
-                          aria-label="Edit note"
-                          @click="openNoteDialog(card, 'edit')"
-                        >
-                          <CdxIcon :icon="cdxIconEdit" />
-                        </CdxButton>
-                        <CdxButton
-                          weight="quiet"
-                          :icon-only="true"
-                          aria-label="Remove note"
-                          @click="removeNote(card)"
-                        >
-                          <CdxIcon :icon="cdxIconTrash" />
-                        </CdxButton>
-                      </div>
-                    </div>
-                    <p class="wc2__card-note-text" v-html="linkifyNote(card.note.text)" />
-                    <p class="wc2__card-note-meta">
-                      {{ card.note.author }} · {{ formatNoteTime(card.note.addedAt) }}
-                    </p>
                   </div>
                     </div>
                   </div>
@@ -1504,13 +1524,16 @@ watch(eventWorklistId, loadWorklistCards)
   padding: var(--spacing-75);
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
 }
 
 .wc2__card-main {
   display: flex;
-  align-items: flex-start;
+  flex: 1 1 auto;
+  align-items: stretch;
   gap: var(--spacing-75);
   min-width: 0;
+  min-height: 0;
 }
 
 .wc2__card-thumb {
@@ -1546,13 +1569,14 @@ watch(eventWorklistId, loadWorklistCards)
   flex-direction: column;
   gap: 0;
   flex: 1 1 auto;
+  align-self: stretch;
   min-width: 0;
+  min-height: 0;
 }
 
 .wc2__card-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--spacing-50);
   width: 100%;
   min-width: 0;
@@ -1572,7 +1596,23 @@ watch(eventWorklistId, loadWorklistCards)
 
 .wc2__card-remove {
   flex-shrink: 0;
-  margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 0;
+  margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 auto;
+}
+
+.wc2__card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-50);
+  min-width: 0;
+}
+
+.wc2__card-title-row .wc2__card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wc2__card-title-row .wc2__card-remove {
+  margin-left: 0;
 }
 
 .wc2__card-title {
@@ -1607,7 +1647,8 @@ watch(eventWorklistId, loadWorklistCards)
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-100);
-  margin-top: var(--spacing-50);
+  margin-top: auto;
+  padding-top: var(--spacing-50);
 }
 
 .wc2__meta-item {
