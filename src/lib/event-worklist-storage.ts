@@ -58,6 +58,13 @@ export const DEFAULT_WORKLIST_ARTICLES = [
   'Politics of climate change',
   'Amazon rainforest',
   'Biodiversity',
+  'Deforestation',
+  'Great Barrier Reef',
+  'Renewable energy',
+  'Keystone species',
+  'Wetland',
+  'Solar energy',
+  'Habitat destruction',
 ]
 
 function storageKey(eventId: string): string {

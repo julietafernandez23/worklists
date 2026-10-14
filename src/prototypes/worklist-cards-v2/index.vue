@@ -8,11 +8,13 @@ import {
   CdxIcon,
   CdxInfoChip,
   CdxLookup,
+  CdxMessage,
   CdxSearchInput,
   CdxSelect,
   CdxTab,
   CdxTabs,
   CdxTextArea,
+  CdxTooltip,
 } from '@wikimedia/codex'
 import type { MenuItemData } from '@wikimedia/codex'
 import {
@@ -32,6 +34,19 @@ import {
   getWorklistArticleTitles,
   saveWorklistArticleTitles,
 } from '@/lib/event-worklist-storage'
+import {
+  otherSuggestedTaskCount,
+  otherSuggestedTasksSuffix,
+} from '@/lib/worklist-card-signals'
+import {
+  COLLECTION_LOOKUP_PREFIX,
+  collectionNameFromLine,
+  formatCollectionLine,
+} from '@/lib/worklist-collection-line'
+import { registerCollection } from '@/prototypes/collections-view-modes/saved-items'
+import { useSkin } from '@/composables/useSkin'
+
+const vTooltip = CdxTooltip
 
 definePage({
   meta: {
@@ -71,6 +86,8 @@ interface ArticleCard {
 }
 
 const route = useRoute()
+const skin = useSkin()
+const isMobileSkin = computed(() => skin.value === 'mobile')
 
 const eventWorklistId = computed(() => {
   const value = route.query.event
@@ -136,30 +153,54 @@ function qualityBand(score: number): QualityBand {
   return 'low'
 }
 
-const VIEW_COUNTS = [20, 5, 35, 12, 8, 15, 120]
+const VIEW_COUNTS = [20, 5, 35, 12, 8, 15, 120, 9, 45, 28, 6, 18, 22, 11, 33]
 
 const RECOMMENDED_TASKS = [
-  'Needs more references',
-  'Needs more internal wikilinks',
-  'Needs clearer section headings',
-  'Needs images or other media',
-  'Needs an infobox',
-  'Needs more relevant categories',
-  'Needs expansion of content',
-  'Needs a maintenance review',
+  'Add citations',
+  'Add links',
+  'Improve headings',
+  'Add images',
+  'Add an infobox',
+  'Add categories',
+  'Expand article',
+  'Check maintenance message',
 ] as const
 
-const SUGGESTION_COUNTS = [2, 1, 3, 82, 2, 2, 4]
+const RECOMMENDED_TASK_TOOLTIPS: Record<(typeof RECOMMENDED_TASKS)[number], string> = {
+  'Add citations': 'Help readers understand where this information is coming from',
+  'Add links': 'Connect this article to related topics on Wikipedia',
+  'Improve headings': 'Give the article clearer structure with section headings',
+  'Add images': 'Illustrate the article with photos or other media',
+  'Add an infobox': 'Help readers scan key facts with an infobox',
+  'Add categories': 'Help readers discover this article through categories',
+  'Expand article': 'Add more detail so the article better covers its topic',
+  'Check maintenance message': 'Resolve the issue flagged by the maintenance message on this article',
+}
 
-const MAX_VISIBLE_SUGGESTIONS = 1
+/** Highest-priority task first — used to pick one label per card. */
+const RECOMMENDED_TASK_PRIORITY: readonly string[] = [
+  'Check maintenance message',
+  'Add citations',
+  'Expand article',
+  'Add an infobox',
+  'Improve headings',
+  'Add images',
+  'Add links',
+  'Add categories',
+]
 
+/** Demo tasks per card — lead task cycles all eight types; optional lower-priority extra for filters. */
 function fakeSuggestions(index: number): string[] {
-  const count = SUGGESTION_COUNTS[index % SUGGESTION_COUNTS.length]
-  const start = index % RECOMMENDED_TASKS.length
-  return Array.from(
-    { length: count },
-    (_, i) => RECOMMENDED_TASKS[(start + i) % RECOMMENDED_TASKS.length],
-  )
+  const lead = RECOMMENDED_TASKS[index % RECOMMENDED_TASKS.length]
+  const leadRank = RECOMMENDED_TASK_PRIORITY.indexOf(lead)
+  const lowerPriority = RECOMMENDED_TASK_PRIORITY.slice(leadRank + 1)
+  if (!lowerPriority.length) return [lead]
+  if (index % 4 === 0) {
+    const extras = lowerPriority.slice(0, 5)
+    return uniqueSuggestions([lead, ...extras])
+  }
+  const extra = lowerPriority[(index + 1) % lowerPriority.length]
+  return extra === lead ? [lead] : [lead, extra]
 }
 
 function uniqueSuggestions(suggestions: string[]): string[] {
@@ -173,13 +214,18 @@ function uniqueSuggestions(suggestions: string[]): string[] {
   return unique
 }
 
-function visibleSuggestions(suggestions: string[]): string[] {
-  return uniqueSuggestions(suggestions).slice(0, MAX_VISIBLE_SUGGESTIONS)
+function primaryRecommendedTask(suggestions: string[]): string | null {
+  const unique = uniqueSuggestions(suggestions)
+  if (!unique.length) return null
+  for (const task of RECOMMENDED_TASK_PRIORITY) {
+    if (unique.includes(task)) return task
+  }
+  return unique[0]
 }
 
-function extraSuggestionsCount(suggestions: string[]): number {
-  const unique = uniqueSuggestions(suggestions)
-  return Math.max(0, unique.length - MAX_VISIBLE_SUGGESTIONS)
+function recommendedTaskTooltip(task: string): string {
+  return RECOMMENDED_TASK_TOOLTIPS[task as (typeof RECOMMENDED_TASKS)[number]]
+    ?? task
 }
 
 const SUGGESTION_FILTER_OPTIONS: MenuItemData[] = [
@@ -239,9 +285,11 @@ async function fetchArticleCard(
   index: number,
   totalCount: number,
   dateAdded: Date = new Date(Date.now() - (totalCount - index) * 86_400_000),
+  wikiHost = 'en.wikipedia.org',
 ): Promise<ArticleCard> {
   const wikiTitle = title.replace(/ /g, '_')
-  const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`
+  const wikiLabel = wikiLabelForHost(wikiHost)
+  const summaryUrl = `https://${wikiHost}/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`
 
   const summaryResult = await fetch(summaryUrl)
     .then((res) => (res.ok ? res.json() : null))
@@ -253,8 +301,8 @@ async function fetchArticleCard(
       title: summaryResult.title ?? title,
       description: summaryResult.description?.trim() || '',
       url: summaryResult.content_urls?.desktop?.page
-        ?? `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-      wiki: 'English Wikipedia',
+        ?? `https://${wikiHost}/wiki/${encodeURIComponent(wikiTitle)}`,
+      wiki: wikiLabel,
       dateAdded,
       viewsPerMonth: fakeViews(index),
       viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
@@ -271,8 +319,8 @@ async function fetchArticleCard(
   return {
     title,
     description: '',
-    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-    wiki: 'English Wikipedia',
+    url: `https://${wikiHost}/wiki/${encodeURIComponent(wikiTitle)}`,
+    wiki: wikiLabel,
     dateAdded,
     viewsPerMonth: fakeViews(index),
     viewsCount: VIEW_COUNTS[index % VIEW_COUNTS.length],
@@ -287,6 +335,21 @@ async function fetchArticleCard(
 
 const REDLINK_PREFIX = '__redlink__:'
 
+const ADD_WIKI_OPTIONS: MenuItemData[] = [
+  { value: 'en.wikipedia.org', label: 'English Wikipedia' },
+  { value: 'es.wikipedia.org', label: 'Spanish Wikipedia' },
+  { value: 'de.wikipedia.org', label: 'German Wikipedia' },
+  { value: 'fr.wikipedia.org', label: 'French Wikipedia' },
+  { value: 'pt.wikipedia.org', label: 'Portuguese Wikipedia' },
+  { value: 'commons.wikimedia.org', label: 'Wikimedia Commons' },
+  { value: 'www.wikidata.org', label: 'Wikidata' },
+]
+
+function wikiLabelForHost(host: string): string {
+  const match = ADD_WIKI_OPTIONS.find(option => option.value === host)
+  return match?.label ?? host
+}
+
 const cards = ref<ArticleCard[]>([])
 const loading = ref(true)
 const activeTab = ref('worklist')
@@ -300,13 +363,16 @@ const draftQualityFilter = ref('all')
 const draftSuggestionFilter = ref('all')
 const showAddDialog = ref(false)
 const addPending = ref(false)
+const addWikiHost = ref('en.wikipedia.org')
 
 const lookupInput = ref('')
 const lookupSelected = ref<string | null>(null)
 const lookupMenuItems = ref<MenuItemData[]>([])
 const lookupPending = ref(false)
 const lookupIsRedLink = ref(false)
+const lookupIsCollection = ref(false)
 const selectedPages = ref('')
+const addCollectionNotice = ref<string | null>(null)
 
 const showRemoveDialog = ref(false)
 const pendingRemoveTitle = ref<string | null>(null)
@@ -320,16 +386,20 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(lookupSelected, (val) => {
   if (!val) return
-  let title = val
-  if (title.startsWith(REDLINK_PREFIX)) {
-    title = title.slice(REDLINK_PREFIX.length)
+  let lineToAppend = val
+  if (val.startsWith(COLLECTION_LOOKUP_PREFIX)) {
+    const name = val.slice(COLLECTION_LOOKUP_PREFIX.length)
+    lineToAppend = formatCollectionLine(name)
+  } else if (val.startsWith(REDLINK_PREFIX)) {
+    lineToAppend = val.slice(REDLINK_PREFIX.length)
   }
   const current = selectedPages.value.trim()
-  selectedPages.value = current ? `${current}\n${title}` : title
+  selectedPages.value = current ? `${current}\n${lineToAppend}` : lineToAppend
   lookupSelected.value = null
   lookupInput.value = ''
   lookupMenuItems.value = []
   lookupIsRedLink.value = false
+  lookupIsCollection.value = false
 })
 
 function canEditNote(card: ArticleCard): boolean {
@@ -448,9 +518,30 @@ function openWorklistHistory() {
   window.open(WORKLIST_HISTORY_URL, '_blank', 'noopener,noreferrer')
 }
 
+function showCollectionLookupOption(query: string): boolean {
+  const name = collectionNameFromLine(query)
+  if (!name) {
+    lookupIsCollection.value = false
+    return false
+  }
+  lookupIsRedLink.value = false
+  lookupIsCollection.value = true
+  lookupMenuItems.value = [
+    {
+      value: `${COLLECTION_LOOKUP_PREFIX}${name}`,
+      label: formatCollectionLine(name),
+    },
+  ]
+  return true
+}
+
 async function searchArticles(query: string) {
   if (!query.trim()) {
     lookupMenuItems.value = []
+    lookupIsCollection.value = false
+    return
+  }
+  if (showCollectionLookupOption(query)) {
     return
   }
   lookupPending.value = true
@@ -462,10 +553,11 @@ async function searchArticles(query: string) {
       format: 'json',
       origin: '*',
     })
-    const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`)
+    const res = await fetch(`https://${addWikiHost.value}/w/api.php?${params}`)
     const [, titles] = (await res.json()) as [string, string[]]
     if (titles.length > 0) {
       lookupIsRedLink.value = false
+      lookupIsCollection.value = false
       lookupMenuItems.value = titles.map((t) => ({ value: t, label: t }))
     } else {
       lookupMenuItems.value = [
@@ -495,13 +587,57 @@ function openAddDialog() {
   lookupSelected.value = null
   lookupMenuItems.value = []
   lookupIsRedLink.value = false
+  lookupIsCollection.value = false
+  addWikiHost.value = 'en.wikipedia.org'
+  addCollectionNotice.value = null
   showAddDialog.value = true
+}
+
+function onAddWikiSelected(value: string | null) {
+  if (!value) return
+  addWikiHost.value = value
+  lookupMenuItems.value = []
+  lookupIsRedLink.value = false
+  if (lookupInput.value.trim()) {
+    searchArticles(lookupInput.value)
+  }
+}
+
+function cardIdentityKey(wiki: string, title: string): string {
+  return `${wiki.toLowerCase()}::${title.toLowerCase()}`
 }
 
 async function onAdd() {
   const lines = selectedPages.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-  const existingTitles = new Set(cards.value.map((card) => card.title.toLowerCase()))
-  const newTitles = lines.filter((title) => !existingTitles.has(title.toLowerCase()))
+  const collectionNames: string[] = []
+  const articleLines: string[] = []
+
+  for (const line of lines) {
+    const collectionName = collectionNameFromLine(line)
+    if (collectionName) {
+      collectionNames.push(collectionName)
+    } else {
+      articleLines.push(line)
+    }
+  }
+
+  for (const name of collectionNames) {
+    registerCollection(name)
+  }
+
+  if (collectionNames.length) {
+    addCollectionNotice.value = collectionNames.length === 1
+      ? `Collection “${collectionNames[0]}” was added to your saved collections (demo).`
+      : `${collectionNames.length} collections were added to your saved collections (demo).`
+  }
+
+  const wikiLabel = wikiLabelForHost(addWikiHost.value)
+  const existingKeys = new Set(
+    cards.value.map((card) => cardIdentityKey(card.wiki, card.title)),
+  )
+  const newTitles = articleLines.filter(
+    (title) => !existingKeys.has(cardIdentityKey(wikiLabel, title)),
+  )
 
   if (!newTitles.length) {
     showAddDialog.value = false
@@ -513,7 +649,13 @@ async function onAdd() {
   const totalAfterAdd = startIndex + newTitles.length
   const added = await Promise.all(
     newTitles.map((title, offset) =>
-      fetchArticleCard(title, startIndex + offset, totalAfterAdd, new Date()),
+      fetchArticleCard(
+        title,
+        startIndex + offset,
+        totalAfterAdd,
+        new Date(),
+        addWikiHost.value,
+      ),
     ),
   )
   cards.value = [...cards.value, ...added]
@@ -642,8 +784,8 @@ watch(eventWorklistId, loadWorklistCards)
 </script>
 
 <template>
-  <ChromeWrapper :last-edited-notice="false" skin="mobile">
-    <SpecialPageWrapper :title="null" class="wc2__special-page" skin="mobile">
+  <ChromeWrapper :last-edited-notice="false">
+    <SpecialPageWrapper :title="null" class="wc2__special-page">
       <template #header>
         <h1 class="wc2__page-title-text">
           Event details: Wiki Loves Earth 2026
@@ -653,40 +795,66 @@ watch(eventWorklistId, loadWorklistCards)
         <CdxTab name="details" label="Event details" :disabled="true" />
         <CdxTab name="participants" label="Participants" :disabled="true" />
         <CdxTab name="worklist" label="Worklist">
+          <div class="wc2__skin-root" :data-skin="skin">
           <nav class="wc2__toolbar" aria-label="Worklist actions">
-            <div class="wc2__toolbar-row">
-              <CdxButton
-                class="wc2__toolbar-add"
-                action="progressive"
-                weight="normal"
-                @click="openAddDialog"
+            <div class="wc2__toolbar-bar">
+              <div class="wc2__toolbar-actions">
+                <CdxButton
+                  class="wc2__toolbar-add"
+                  action="progressive"
+                  weight="normal"
+                  @click="openAddDialog"
+                >
+                  <CdxIcon :icon="cdxIconAdd" />
+                  Add article
+                </CdxButton>
+                <CdxButton
+                  class="wc2__toolbar-history"
+                  weight="normal"
+                  :icon-only="isMobileSkin"
+                  :aria-label="isMobileSkin ? 'View history' : undefined"
+                  @click="openWorklistHistory"
+                >
+                  <CdxIcon :icon="cdxIconHistory" />
+                  <span v-if="!isMobileSkin">History</span>
+                </CdxButton>
+                <CdxButton
+                  class="wc2__toolbar-filter"
+                  weight="normal"
+                  :action="hasActiveFilters ? 'progressive' : 'default'"
+                  :icon-only="isMobileSkin"
+                  :aria-label="isMobileSkin ? 'Filter and sort articles' : undefined"
+                  @click="openFilterDialog"
+                >
+                  <CdxIcon :icon="cdxIconConfigure" />
+                  <span v-if="!isMobileSkin">Filters</span>
+                </CdxButton>
+              </div>
+
+              <div
+                v-if="!loading && !isMobileSkin"
+                class="wc2__toolbar-search"
               >
-                <CdxIcon :icon="cdxIconAdd" />
-                Add article
-              </CdxButton>
-              <CdxButton
-                class="wc2__toolbar-history"
-                weight="normal"
-                :icon-only="true"
-                aria-label="View history"
-                @click="openWorklistHistory"
-              >
-                <CdxIcon :icon="cdxIconHistory" />
-              </CdxButton>
-              <CdxButton
-                class="wc2__toolbar-filter"
-                weight="normal"
-                :action="hasActiveFilters ? 'progressive' : 'default'"
-                :icon-only="true"
-                aria-label="Filter and sort articles"
-                @click="openFilterDialog"
-              >
-                <CdxIcon :icon="cdxIconConfigure" />
-              </CdxButton>
+                <div class="wc2__search-with-button">
+                  <CdxSearchInput
+                    v-model="searchQuery"
+                    class="wc2__search wc2__search--toolbar"
+                    placeholder="Search"
+                    aria-label="Search articles"
+                  />
+                  <CdxButton
+                    class="wc2__search-submit"
+                    weight="normal"
+                    type="button"
+                  >
+                    Search
+                  </CdxButton>
+                </div>
+              </div>
             </div>
           </nav>
 
-          <div v-if="!loading" class="wc2__search-row">
+          <div v-if="!loading && isMobileSkin" class="wc2__search-row">
             <div class="wc2__search-wrap">
               <CdxSearchInput
                 v-model="searchQuery"
@@ -698,6 +866,16 @@ watch(eventWorklistId, loadWorklistCards)
           </div>
 
           <div class="wc2__page">
+            <CdxMessage
+              v-if="addCollectionNotice"
+              type="success"
+              class="wc2__collection-notice"
+              :allow-user-dismiss="true"
+              @user-dismissed="addCollectionNotice = null"
+            >
+              {{ addCollectionNotice }}
+            </CdxMessage>
+
             <div v-if="loading" class="wc2__loading">Loading articles…</div>
 
             <template v-else>
@@ -766,19 +944,28 @@ watch(eventWorklistId, loadWorklistCards)
                         class="wc2__meta-icon wc2__meta-icon--suggestion"
                       />
                       <span class="wc2__meta-text wc2__meta-text--suggestions">
-                        <template
-                          v-for="(suggestion, index) in visibleSuggestions(card.suggestions)"
-                          :key="`${suggestion}-${index}`"
-                        >
-                          <span v-if="index > 0" class="wc2__suggestion-sep">, </span>
-                          <span class="wc2__suggestion-text">{{ suggestion }}</span>
+                        <template v-if="primaryRecommendedTask(card.suggestions)">
+                          <span
+                            v-if="!isMobileSkin"
+                            v-tooltip="recommendedTaskTooltip(primaryRecommendedTask(card.suggestions)!)"
+                            tabindex="0"
+                            class="wc2__suggestion-text wc2__suggestion-text--tooltip"
+                          >
+                            {{ primaryRecommendedTask(card.suggestions) }}
+                          </span>
+                          <span
+                            v-else
+                            class="wc2__suggestion-text"
+                          >
+                            {{ primaryRecommendedTask(card.suggestions) }}
+                          </span>
+                          <span
+                            v-if="otherSuggestedTaskCount(card.suggestions)"
+                            class="wc2__suggestion-remainder"
+                          >
+                            {{ otherSuggestedTasksSuffix(otherSuggestedTaskCount(card.suggestions)) }}
+                          </span>
                         </template>
-                        <span
-                          v-if="extraSuggestionsCount(card.suggestions) > 0"
-                          class="wc2__suggestion-more"
-                        >
-                          <span class="wc2__suggestion-sep">, </span>+{{ extraSuggestionsCount(card.suggestions) }} more
-                        </span>
                       </span>
                     </div>
                   </div>
@@ -825,6 +1012,7 @@ watch(eventWorklistId, loadWorklistCards)
               </CdxButton>
             </template>
           </div>
+          </div>
         </CdxTab>
         <CdxTab name="contributions" label="Contributions" :disabled="true" />
       </CdxTabs>
@@ -841,9 +1029,23 @@ watch(eventWorklistId, loadWorklistCards)
     @primary="onAdd"
   >
     <div class="wc2__dialog-body">
+      <CdxField class="wc2__add-dialog-wiki-field">
+        <template #label>Wiki</template>
+        <CdxSelect
+          :selected="addWikiHost"
+          :menu-items="ADD_WIKI_OPTIONS"
+          @update:selected="onAddWikiSelected"
+        />
+      </CdxField>
+
       <CdxField>
         <template #label>Search Wikipedia</template>
-        <div :class="{ 'wc2__lookup--redlink': lookupIsRedLink }">
+        <div
+          :class="{
+            'wc2__lookup--redlink': lookupIsRedLink,
+            'wc2__lookup--collection': lookupIsCollection,
+          }"
+        >
           <CdxLookup
             v-model:selected="lookupSelected"
             v-model:input-value="lookupInput"
@@ -859,11 +1061,13 @@ watch(eventWorklistId, loadWorklistCards)
 
       <CdxField>
         <template #label>List pages</template>
-        <template #description>One title per line</template>
+        <template #description>
+          One title per line, or Collection:Name to create a saved collection (demo).
+        </template>
         <CdxTextArea
           v-model="selectedPages"
           :rows="5"
-          :placeholder="'Earth\nMoon\nJupiter'"
+          :placeholder="'Earth\nMoon\nCollection:Birds I like'"
           class="wc2__pages-textarea"
         />
       </CdxField>
@@ -1010,34 +1214,106 @@ watch(eventWorklistId, loadWorklistCards)
   margin-bottom: var(--spacing-100);
 }
 
-.wc2__toolbar-row {
+.wc2__toolbar-bar {
   display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+}
+
+.wc2__skin-root[data-skin='desktop'] .wc2__toolbar-bar {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--spacing-100);
+}
+
+.wc2__toolbar-actions {
+  display: flex;
+  flex: 0 0 auto;
   gap: var(--spacing-50);
   align-items: stretch;
+  min-width: 0;
 }
 
 .wc2__toolbar-add:deep(.cdx-button),
+.wc2__toolbar-history:deep(.cdx-button),
+.wc2__toolbar-filter:deep(.cdx-button),
 .wc2__visit-page:deep(.cdx-button) {
-  width: 100%;
-  justify-content: center;
   gap: var(--spacing-50);
   padding-inline: var(--spacing-75);
   box-sizing: border-box;
+  width: auto;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.wc2__skin-root[data-skin='mobile'] .wc2__toolbar-add {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wc2__skin-root[data-skin='mobile'] .wc2__toolbar-add:deep(.cdx-button) {
+  width: 100%;
+}
+
+.wc2__visit-page:deep(.cdx-button) {
+  width: 100%;
+  justify-content: center;
 }
 
 .wc2__toolbar-add:deep(.cdx-icon),
+.wc2__toolbar-history:deep(.cdx-icon),
+.wc2__toolbar-filter:deep(.cdx-icon),
 .wc2__visit-page:deep(.cdx-icon) {
   flex-shrink: 0;
 }
 
 .wc2__toolbar-add {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .wc2__toolbar-history,
 .wc2__toolbar-filter {
   flex-shrink: 0;
+}
+
+.wc2__toolbar-search {
+  flex: 1 1 auto;
+  min-width: 12rem;
+  max-width: 28rem;
+}
+
+.wc2__skin-root[data-skin='desktop'] .wc2__toolbar-search {
+  margin-inline-start: auto;
+}
+
+.wc2__search-with-button {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.wc2__search--toolbar {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wc2__search--toolbar:deep(.cdx-search-input),
+.wc2__search--toolbar:deep(.cdx-text-input) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.wc2__search-submit {
+  flex-shrink: 0;
+}
+
+.wc2__search-submit:deep(.cdx-button) {
+  height: 100%;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-inline-start: calc(-1 * var(--border-width-base, 1px));
 }
 
 .wc2__search-row {
@@ -1150,13 +1426,22 @@ watch(eventWorklistId, loadWorklistCards)
   gap: var(--spacing-75);
 }
 
+.wc2__skin-root[data-skin='desktop'] .wc2__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-100);
+  align-items: stretch;
+}
+
 .wc2__list > li {
   margin: 0;
+  min-width: 0;
 }
 
 .wc2__card {
   display: flex;
   flex-direction: column;
+  height: 100%;
   padding: 0;
   overflow: hidden;
   border: var(--border-width-base) solid var(--border-color-subtle);
@@ -1347,6 +1632,16 @@ watch(eventWorklistId, loadWorklistCards)
   color: var(--color-subtle);
 }
 
+.wc2__suggestion-text--tooltip {
+  cursor: help;
+  border-bottom: var(--border-width-base) dotted var(--border-color-subtle);
+}
+
+.wc2__suggestion-remainder {
+  color: var(--color-subtle);
+  cursor: default;
+}
+
 .wc2__suggestion-sep {
   color: var(--color-subtle);
 }
@@ -1359,6 +1654,25 @@ watch(eventWorklistId, loadWorklistCards)
   display: flex;
   flex-direction: column;
   gap: var(--spacing-75);
+}
+
+.wc2__add-dialog-wiki-field {
+  width: 100%;
+  min-width: 0;
+}
+
+.wc2__add-dialog-wiki-field:deep(.cdx-select-vue) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wc2__add-dialog-wiki-field:deep(.cdx-select-vue__handle) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .wc2__dialog-or + * {
@@ -1395,5 +1709,13 @@ watch(eventWorklistId, loadWorklistCards)
 
 .wc2__lookup--redlink :deep(.cdx-menu-item__text__label) {
   color: var(--color-destructive, #d73333);
+}
+
+.wc2__lookup--collection :deep(.cdx-menu-item__text__label) {
+  color: var(--color-progressive);
+}
+
+.wc2__collection-notice {
+  margin-bottom: var(--spacing-100);
 }
 </style>

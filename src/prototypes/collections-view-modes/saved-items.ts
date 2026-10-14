@@ -39,6 +39,17 @@ export function addArticleToCollection(collection: string, articleTitle: string)
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
 
+/** Demo: register an empty saved collection (no articles yet). */
+export function registerCollection(collection: string): void {
+  const name = collection.trim()
+  if (!name) return
+  const data = loadSavedItems()
+  if (!data[name]) {
+    data[name] = []
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  }
+}
+
 export function getCollectionArticles(collection: string): string[] {
   const stored = loadSavedItems()[collection] ?? []
   const defaults = DEFAULT_COLLECTION_ARTICLES[collection] ?? []
