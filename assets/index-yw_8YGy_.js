@@ -1,0 +1,1 @@
+import{d as r,b as a,k as s,u as n,o as c}from"./index-tPOSfSSo.js";import{A as i}from"./useCollections-BRtfTFjc.js";const d=r({__name:"index",setup(u){const t=s(),o=n(),e={...t.query};return e.article!==void 0&&(e.title=e.article,delete e.article),window.location.replace(o.resolve({path:i,query:e}).href),(l,p)=>(c(),a("span"))}});export{d as default};
