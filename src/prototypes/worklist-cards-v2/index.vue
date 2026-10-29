@@ -172,7 +172,7 @@ const RECOMMENDED_TASKS = [
   'Add an infobox',
   'Add categories',
   'Expand article',
-  'Check maintenance message',
+  'Check maintenance',
 ] as const
 
 const RECOMMENDED_TASK_TOOLTIPS: Record<(typeof RECOMMENDED_TASKS)[number], string> = {
@@ -183,12 +183,12 @@ const RECOMMENDED_TASK_TOOLTIPS: Record<(typeof RECOMMENDED_TASKS)[number], stri
   'Add an infobox': 'Help readers scan key facts with an infobox',
   'Add categories': 'Help readers discover this article through categories',
   'Expand article': 'Add more detail so the article better covers its topic',
-  'Check maintenance message': 'Resolve the issue flagged by the maintenance message on this article',
+  'Check maintenance': 'Resolve the issue flagged by the maintenance message on this article',
 }
 
 /** Highest-priority task first — used to pick one label per card. */
 const RECOMMENDED_TASK_PRIORITY: readonly string[] = [
-  'Check maintenance message',
+  'Check maintenance',
   'Add citations',
   'Expand article',
   'Add an infobox',
@@ -920,10 +920,7 @@ watch(eventWorklistId, loadWorklistCards)
                 </div>
 
                 <div class="wc2__card-body">
-                  <div
-                    v-if="qualityBand(card.qualityScore) === 'low'"
-                    class="wc2__card-header"
-                  >
+                  <div class="wc2__card-header">
                     <div class="wc2__quality-chip">
                       <CdxInfoChip :status="QUALITY_CHIP_STATUS">
                         {{ qualityLabel(card.qualityScore) }}
@@ -947,28 +944,7 @@ watch(eventWorklistId, loadWorklistCards)
                     />
 
                     <div class="wc2__card-content">
-                  <div
-                    v-if="qualityBand(card.qualityScore) !== 'low'"
-                    class="wc2__card-title-row"
-                  >
-                    <a
-                      class="wc2__card-title"
-                      :href="card.url"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ card.title }}</a>
-                    <CdxButton
-                      weight="quiet"
-                      :icon-only="true"
-                      aria-label="Remove article"
-                      class="wc2__card-remove"
-                      @click="confirmRemove(card.title)"
-                    >
-                      <CdxIcon :icon="cdxIconTrash" />
-                    </CdxButton>
-                  </div>
                   <a
-                    v-else
                     class="wc2__card-title"
                     :href="card.url"
                     target="_blank"
@@ -1597,22 +1573,6 @@ watch(eventWorklistId, loadWorklistCards)
 .wc2__card-remove {
   flex-shrink: 0;
   margin: calc(-1 * var(--spacing-25)) calc(-1 * var(--spacing-25)) 0 auto;
-}
-
-.wc2__card-title-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-50);
-  min-width: 0;
-}
-
-.wc2__card-title-row .wc2__card-title {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.wc2__card-title-row .wc2__card-remove {
-  margin-left: 0;
 }
 
 .wc2__card-title {

@@ -8,7 +8,7 @@ export const RECOMMENDED_TASKS = [
   'Add an infobox',
   'Add categories',
   'Expand article',
-  'Check maintenance message',
+  'Check maintenance',
 ] as const
 
 export const RECOMMENDED_TASK_TOOLTIPS: Record<(typeof RECOMMENDED_TASKS)[number], string> = {
@@ -19,12 +19,12 @@ export const RECOMMENDED_TASK_TOOLTIPS: Record<(typeof RECOMMENDED_TASKS)[number
   'Add an infobox': 'Help readers scan key facts with an infobox',
   'Add categories': 'Help readers discover this article through categories',
   'Expand article': 'Add more detail so the article better covers its topic',
-  'Check maintenance message': 'Resolve the issue flagged by the maintenance message on this article',
+  'Check maintenance': 'Resolve the issue flagged by the maintenance message on this article',
 }
 
 /** Highest-priority task first — used to pick one label per card. */
 export const RECOMMENDED_TASK_PRIORITY: readonly string[] = [
-  'Check maintenance message',
+  'Check maintenance',
   'Add citations',
   'Expand article',
   'Add an infobox',

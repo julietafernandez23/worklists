@@ -5,7 +5,7 @@ import { CdxButton, CdxIcon } from '@wikimedia/codex'
 import { cdxIconAdd, cdxIconCheck, cdxIconClose } from '@wikimedia/codex-icons'
 import ArticleSnapshot from '@/components/article/ArticleSnapshot.vue'
 import ChromeWrapper from '@/components/chrome/ChromeWrapper.vue'
-import { addArticleToCollection } from './saved-items'
+import { addArticleToCollection, DEMO_COLLECTION_NAMES } from './saved-items'
 
 definePage({
   meta: {
@@ -18,12 +18,7 @@ definePage({
 
 const ARTICLE_TITLE = 'Wet Leg'
 
-const COLLECTIONS = [
-  'Fav film actresses',
-  'Odd and interesting articles',
-  'Birds I want to see in Costa Rica',
-  'Articles on bands I want to edit',
-]
+const COLLECTIONS = DEMO_COLLECTION_NAMES
 
 const bookmarked = ref(false)
 const addedToCollection = ref<string | null>(null)
@@ -43,56 +38,59 @@ function onAddToCollection(collectionName: string, close: () => void) {
   addedToCollection.value = collectionName
 }
 
-const savedCollectionLink = computed(() => ({
-  path: '/collections-view-modes/saved',
-  query: addedToCollection.value ? { collection: addedToCollection.value } : {},
-}))
+const savedCollectionLink = computed(() => {
+  if (addedToCollection.value) {
+    return {
+      path: '/collections-view-modes/saved',
+      query: { collection: addedToCollection.value },
+    }
+  }
+  return { path: '/collections-view-modes/saved', query: { view: 'collections' } }
+})
 </script>
 
 <template>
-  <ChromeWrapper skin="mobile">
+  <ChromeWrapper>
     <main>
       <ArticleSnapshot
         class="article"
-        article="Wet Leg"
-        skin="mobile"
+        :article="ARTICLE_TITLE"
         use-bookmark-action
         :bookmarked="bookmarked"
         @bookmark-click="onBookmarkClick"
       >
         <template #bookmark-menu="{ articleTitle, close }">
           <div class="cvm-bookmark-menu">
-            <div class="cvm-bookmark-menu__header">
-              <div class="cvm-bookmark-menu__header-top">
-                <div class="cvm-bookmark-menu__status">
-                  <span class="cvm-bookmark-menu__check" aria-hidden="true">
-                    <CdxIcon :icon="cdxIconCheck" />
-                  </span>
-                  <p class="cvm-bookmark-menu__message">
-                    {{ articleTitle }} added to
-                    <a href="#" class="cvm-bookmark-menu__saved-link" @click.prevent>saved items</a>
-                  </p>
-                </div>
-                <CdxButton
-                  class="cvm-bookmark-menu__close"
-                  weight="quiet"
-                  :icon-only="true"
-                  aria-label="Close"
-                  @click="close"
-                >
-                  <CdxIcon :icon="cdxIconClose" />
-                </CdxButton>
+            <div class="cvm-bookmark-menu__header-top">
+              <div class="cvm-bookmark-menu__status">
+                <span class="cvm-bookmark-menu__check" aria-hidden="true">
+                  <CdxIcon :icon="cdxIconCheck" />
+                </span>
+                <p class="cvm-bookmark-menu__message">
+                  {{ articleTitle }} added to
+                  <RouterLink :to="savedCollectionLink" class="cvm-bookmark-menu__saved-link">
+                    saved items
+                  </RouterLink>
+                </p>
               </div>
-
-              <button
-                type="button"
-                class="cvm-bookmark-menu__create"
-                @click="onCreateCollection"
+              <CdxButton
+                class="cvm-bookmark-menu__close"
+                weight="quiet"
+                :icon-only="true"
+                aria-label="Close"
+                @click="close"
               >
-                <CdxIcon :icon="cdxIconAdd" />
-                Create collection
-              </button>
+                <CdxIcon :icon="cdxIconClose" />
+              </CdxButton>
             </div>
+
+            <button
+              type="button"
+              class="cvm-bookmark-menu__create"
+              @click="onCreateCollection"
+            >
+              Create collection
+            </button>
 
             <ul class="cvm-bookmark-menu__list" role="list">
               <li
@@ -148,15 +146,32 @@ main {
   margin: calc(-1 * var(--spacing-50)) calc(-1 * var(--spacing-150)) 0;
 }
 
-.cvm-bookmark-menu__header {
-  padding: var(--spacing-100) var(--spacing-150) 0;
-  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+@media (min-width: 640px) {
+  .cvm-bookmark-menu {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: calc(100vh - 96px);
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .cvm-bookmark-menu__list {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 }
 
 .cvm-bookmark-menu__header-top {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-50);
+  padding: var(--spacing-100) var(--spacing-150);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
 }
 
 .cvm-bookmark-menu__status {
@@ -189,14 +204,14 @@ main {
   margin: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--font-weight-bold);
   line-height: var(--line-height-medium);
   color: var(--color-base);
 }
 
 .cvm-bookmark-menu__saved-link {
   color: var(--color-progressive);
-  font-weight: var(--font-weight-bold);
+  font-weight: inherit;
   text-decoration: none;
 }
 
@@ -210,13 +225,12 @@ main {
 }
 
 .cvm-bookmark-menu__create {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-35);
-  width: calc(100% + 2 * var(--spacing-150));
-  margin: var(--spacing-75) calc(-1 * var(--spacing-150)) 0;
-  padding: 0 var(--spacing-150) var(--spacing-75);
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--spacing-75) var(--spacing-150);
   border: none;
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
   background: transparent;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
@@ -229,10 +243,6 @@ main {
 
 .cvm-bookmark-menu__create:hover {
   text-decoration: underline;
-}
-
-.cvm-bookmark-menu__create :deep(.cdx-icon) {
-  color: var(--color-progressive);
 }
 
 .cvm-bookmark-menu__list {

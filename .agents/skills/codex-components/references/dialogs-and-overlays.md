@@ -98,6 +98,11 @@ cards, etc. — anything beyond a flat list of options.
 </CdxPopover>
 ```
 
+| Prop | Use |
+| --- | --- |
+| `useBottomSheet` | `'never'` (default), `'responsive'` (mobile), or `'always'` — boolean `true`/`false` still works but is deprecated |
+| `hideArrow` | hide the popover arrow when set |
+
 ## Pattern — confirm before destructive
 
 ```vue

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { CdxMessage, CdxProgressBar } from '@wikimedia/codex'
 
 import ArticleRenderer from './ArticleRenderer.vue'
@@ -99,7 +99,9 @@ interface Props {
   languagesCount?: number
 }
 
-const emit = defineEmits<{ editClick: [] }>()
+const emit = defineEmits<{ editClick: []; parserReady: [root: HTMLElement] }>()
+
+const rendererRef = ref<InstanceType<typeof ArticleRenderer> | null>(null)
 
 const props = withDefaults(defineProps<Props>(), {
   lang: undefined,
@@ -218,6 +220,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(liveHtml, async (html) => {
+  if (!html) return
+  await nextTick()
+  const root = rendererRef.value?.$el as HTMLElement | undefined
+  if (root) emit('parserReady', root)
+})
 </script>
 
 <template>
@@ -231,6 +240,13 @@ watch(
     :languages-count="props.languagesCount"
     @edit-click="emit('editClick')"
   >
+    <template v-if="$slots['header-actions']" #header-actions>
+      <slot name="header-actions" />
+    </template>
+    <template v-if="$slots['header-mobile-watch']" #header-mobile-watch>
+      <slot name="header-mobile-watch" />
+    </template>
+
     <CdxProgressBar v-if="loading" inline aria-label="Loading article" />
 
     <CdxMessage v-if="error" type="error" :allow-user-dismiss="false">
@@ -239,6 +255,7 @@ watch(
 
     <ArticleRenderer
       v-if="liveHtml !== null || $slots.default"
+      ref="rendererRef"
       :lang="props.lang"
       :dir="props.dir"
       :skin="props.skin"

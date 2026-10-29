@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, useSlots, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, useSlots, watch } from 'vue'
 import { CdxButton, CdxIcon, CdxPopover, CdxTextInput } from '@wikimedia/codex'
 import {
   cdxIconBookmark,
@@ -85,11 +85,25 @@ const bookmarkLabel = computed(() =>
   props.bookmarked ? 'Remove bookmark' : 'Bookmark article',
 )
 
+const DESKTOP_MIN_WIDTH = 640
+
 const langMenuOpen = ref(false)
 const bookmarkMenuOpen = ref(false)
 const langSearch = ref('')
 const langAnchor = ref<HTMLElement | null>(null)
 const bookmarkAnchor = ref<HTMLElement | null>(null)
+/** Wide viewport: fixed save panel on the right (personal-collections prototype). */
+const bookmarkMenuUsesRail = ref(false)
+
+function syncBookmarkMenuLayout() {
+  if (typeof window === 'undefined') return
+  bookmarkMenuUsesRail.value = window.innerWidth >= DESKTOP_MIN_WIDTH
+}
+
+onMounted(() => {
+  syncBookmarkMenuLayout()
+  window.addEventListener('resize', syncBookmarkMenuLayout)
+})
 
 const filteredLanguageLinks = computed(() => {
   const q = langSearch.value.trim().toLowerCase()
@@ -99,6 +113,28 @@ const filteredLanguageLinks = computed(() => {
 
 watch(langMenuOpen, (open) => {
   if (!open) langSearch.value = ''
+})
+
+watch(bookmarkMenuOpen, (open) => {
+  if (typeof document === 'undefined') return
+  if (open && bookmarkMenuUsesRail.value) {
+    document.addEventListener('keydown', onBookmarkMenuEscape)
+  } else {
+    document.removeEventListener('keydown', onBookmarkMenuEscape)
+  }
+})
+
+watch(effectiveSkin, () => {
+  closeBookmarkMenu()
+})
+
+function onBookmarkMenuEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeBookmarkMenu()
+}
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncBookmarkMenuLayout)
+  document.removeEventListener('keydown', onBookmarkMenuEscape)
 })
 
 function closeLangMenu() {
@@ -164,26 +200,29 @@ function onLanguagePick(row: ArticleLanguageLink) {
         class="article-header__actions"
         aria-label="Page actions"
       >
-        <a
-          href="#"
-          class="article-header__action article-header__action--active"
-          aria-current="true"
-          @click.prevent="$emit('readClick')"
-        >
-          Read
-        </a>
-        <a href="#" class="article-header__action" @click.prevent="$emit('editClick')"> Edit </a>
-        <a href="#" class="article-header__action" @click.prevent="$emit('historyClick')">
-          View history
-        </a>
-        <CdxButton
-          class="article-header__icon-btn"
-          weight="quiet"
-          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
-          @click="onBookmarkButtonClick"
-        >
-          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
-        </CdxButton>
+        <!-- `#actions` replaces the whole desktop action cluster (Read … bookmark). -->
+        <slot name="actions">
+          <a
+            href="#"
+            class="article-header__action article-header__action--active"
+            aria-current="true"
+            @click.prevent="$emit('readClick')"
+          >
+            Read
+          </a>
+          <a href="#" class="article-header__action" @click.prevent="$emit('editClick')"> Edit </a>
+          <a href="#" class="article-header__action" @click.prevent="$emit('historyClick')">
+            View history
+          </a>
+          <CdxButton
+            class="article-header__icon-btn"
+            weight="quiet"
+            :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+            @click="onBookmarkButtonClick"
+          >
+            <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
+          </CdxButton>
+        </slot>
       </nav>
     </div>
 
@@ -214,14 +253,17 @@ function onLanguagePick(row: ArticleLanguageLink) {
         >
           <CdxIcon :icon="cdxIconDownload" />
         </button>
-        <button
-          type="button"
-          class="article-header__icon-tool"
-          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
-          @click="onBookmarkButtonClick"
-        >
-          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconStar" />
-        </button>
+        <!-- `#mobile-watch` replaces the mobile Watch (star) button. -->
+        <slot name="mobile-watch">
+          <button
+            type="button"
+            class="article-header__icon-tool"
+            :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+            @click="onBookmarkButtonClick"
+          >
+            <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconStar" />
+          </button>
+        </slot>
         <button
           type="button"
           class="article-header__icon-tool"
@@ -232,14 +274,17 @@ function onLanguagePick(row: ArticleLanguageLink) {
         </button>
       </div>
       <template v-else>
-        <button
-          type="button"
-          class="article-header__icon-tool"
-          :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
-          @click="onBookmarkButtonClick"
-        >
-          <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
-        </button>
+        <!-- `#mobile-watch` replaces the mobile Watch (star) button. -->
+        <slot name="mobile-watch">
+          <button
+            type="button"
+            class="article-header__icon-tool"
+            :aria-label="useBookmarkAction ? bookmarkLabel : 'Watch'"
+            @click="onBookmarkButtonClick"
+          >
+            <CdxIcon :icon="useBookmarkAction ? bookmarkIcon : cdxIconUnStar" />
+          </button>
+        </slot>
         <button
           type="button"
           class="article-header__icon-tool"
@@ -312,11 +357,11 @@ function onLanguagePick(row: ArticleLanguageLink) {
     </CdxPopover>
 
     <CdxPopover
-      v-if="slots['bookmark-menu']"
+      v-if="slots['bookmark-menu'] && !bookmarkMenuUsesRail"
       v-model:open="bookmarkMenuOpen"
       :anchor="bookmarkAnchor"
       use-bottom-sheet
-      :placement="effectiveSkin === 'mobile' ? 'bottom-start' : 'bottom-end'"
+      placement="bottom-start"
     >
       <slot
         name="bookmark-menu"
@@ -324,6 +369,28 @@ function onLanguagePick(row: ArticleLanguageLink) {
         :close="closeBookmarkMenu"
       />
     </CdxPopover>
+
+    <Teleport to="body">
+      <template v-if="slots['bookmark-menu'] && bookmarkMenuUsesRail && bookmarkMenuOpen">
+        <div
+          class="article-header__bookmark-rail-backdrop"
+          aria-hidden="true"
+          @click="closeBookmarkMenu"
+        />
+        <div
+          class="article-header__bookmark-rail-panel"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="bookmarkLabel"
+        >
+          <slot
+            name="bookmark-menu"
+            :article-title="title"
+            :close="closeBookmarkMenu"
+          />
+        </div>
+      </template>
+    </Teleport>
 
     <p v-if="effectiveSkin === 'desktop'" class="article-header__tagline">
       {{ DEFAULT_TAGLINE }}
@@ -591,5 +658,35 @@ function onLanguagePick(row: ArticleLanguageLink) {
   color: var(--color-subtle);
   border-bottom-color: var(--color-subtle);
   font-weight: var(--font-weight-bold);
+}
+</style>
+
+<!-- Teleported bookmark rail (desktop) — must be unscoped -->
+<style>
+.article-header__bookmark-rail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: transparent;
+}
+
+.article-header__bookmark-rail-panel {
+  position: fixed;
+  top: 96px;
+  right: var(--spacing-100, 16px);
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 316px;
+  max-width: min(316px, calc(100vw - 2 * var(--spacing-100, 16px)));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border: var(--border-width-base) solid var(--border-color-subtle);
+  border-radius: var(--border-radius-base);
+  background-color: var(--background-color-base);
+  box-shadow:
+    0 4px 4px 0 var(--box-shadow-color-alpha-base),
+    0 0 8px 0 var(--box-shadow-color-alpha-base);
 }
 </style>

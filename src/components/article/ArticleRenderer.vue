@@ -110,12 +110,19 @@ function enhanceMobileLeadInfoboxOrder(root: HTMLElement) {
     if (!infobox) return
 
     let firstLeadBlock: HTMLElement | null = null
+    const leadFigures: HTMLElement[] = []
     let candidate = infobox.nextElementSibling as HTMLElement | null
     while (candidate) {
       const tag = candidate.tagName
       const isLeadBlock = tag === 'P' || tag === 'UL' || tag === 'OL'
       const hasReadableText = (candidate.textContent ?? '').trim().length > 0
       const isEmptyElt = candidate.classList.contains('mw-empty-elt')
+
+      if (tag === 'FIGURE') {
+        leadFigures.push(candidate)
+        candidate = candidate.nextElementSibling as HTMLElement | null
+        continue
+      }
 
       if (isLeadBlock && hasReadableText && !isEmptyElt) {
         firstLeadBlock = candidate
@@ -126,6 +133,10 @@ function enhanceMobileLeadInfoboxOrder(root: HTMLElement) {
     }
 
     if (!firstLeadBlock) return
+
+    for (const figure of leadFigures) {
+      firstLeadBlock.insertAdjacentElement('beforebegin', figure)
+    }
 
     if (firstLeadBlock.nextElementSibling !== infobox) {
       firstLeadBlock.insertAdjacentElement('afterend', infobox)
@@ -208,6 +219,23 @@ onUpdated(() => {
 
 .article[data-skin='desktop'] .mw-parser-output table {
   max-width: 100%;
+}
+
+/*
+ * Mobile: wide wikitables scroll inside the table, not the whole screen.
+ */
+.article[data-skin='mobile'] .mw-parser-output table:not(.infobox) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (min-width: 640px) {
+  .article[data-skin='desktop'] .mw-parser-output table.infobox {
+    /* Parsoid Speciesbox / taxobox often inline `width: 200px`; match Vector float column. */
+    width: 22em !important;
+    max-width: 22em;
+  }
 }
 
 .article[data-skin='mobile'] .mw-parser-output .protowiki-mobile-h2 {

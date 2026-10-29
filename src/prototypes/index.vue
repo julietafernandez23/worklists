@@ -20,6 +20,8 @@ const router = useRouter()
 interface PrototypeMeta {
   title?: string
   description?: string
+  /** When true, route exists but is omitted from the gallery (supporting URLs, redirects). */
+  hidden?: boolean
   /** Optional gallery section override (worklists, events, templates, examples, other). */
   group?: string
 }
@@ -134,6 +136,7 @@ const prototypes = computed<PrototypeEntry[]>(() => {
     .getRoutes()
     .filter((route) => route.path !== '/' && route.path !== '/:catchAll(.*)')
     .filter((route) => isTopLevelPrototypePath(route.path))
+    .filter((route) => !(route.meta as PrototypeMeta).hidden)
     .map((route) => {
       const meta = (route.meta ?? {}) as PrototypeMeta
       const description =

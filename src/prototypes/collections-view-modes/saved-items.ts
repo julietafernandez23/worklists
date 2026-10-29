@@ -3,9 +3,27 @@ const VISIBILITY_STORAGE_KEY = 'cvm:collection-visibility'
 
 export type CollectionVisibility = 'private' | 'public'
 
+/** Collections shown in the article save menu (demo). */
+export const DEMO_COLLECTION_NAMES = [
+  'My nemesis birds list',
+  'Forest Ecology, Biodiversity, Woodland Ecosystems, Seasonal Changes, Native Flora and Fauna, Fungal Networks, and the Intricate Relationships Between Trees, Soil and Wildlife',
+  'Neotropical birds',
+  'Animals who made history',
+  'Stargazing',
+  'Music stuff',
+  'Articles on bands I want to edit',
+]
+
 /** Demo seed — pre-populated articles for specific collections. */
 const DEFAULT_COLLECTION_ARTICLES: Record<string, string[]> = {
   'Articles on bands I want to edit': ['The Strokes', 'Boygenius'],
+  'My nemesis birds list': [
+    'Blue-gray tanager',
+    'Canada goose',
+    'Common myna',
+    'House sparrow',
+    'Red-winged blackbird',
+  ],
 }
 
 const DEFAULT_COLLECTION_OWNERS: Record<string, string> = {
@@ -48,6 +66,41 @@ export function registerCollection(collection: string): void {
     data[name] = []
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }
+}
+
+export function getAllCollectionNames(): string[] {
+  const stored = loadSavedItems()
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const name of [
+    ...DEMO_COLLECTION_NAMES,
+    ...Object.keys(DEFAULT_COLLECTION_ARTICLES),
+    ...Object.keys(stored),
+  ]) {
+    if (!seen.has(name)) {
+      seen.add(name)
+      result.push(name)
+    }
+  }
+
+  return result
+}
+
+export function getAllSavedArticleTitles(): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const name of getAllCollectionNames()) {
+    for (const title of getCollectionArticles(name)) {
+      if (!seen.has(title)) {
+        seen.add(title)
+        result.push(title)
+      }
+    }
+  }
+
+  return result
 }
 
 export function getCollectionArticles(collection: string): string[] {

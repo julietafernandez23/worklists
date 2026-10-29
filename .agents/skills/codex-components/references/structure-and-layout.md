@@ -22,6 +22,9 @@ The home gallery (`src/prototypes/index.vue`) uses one `CdxCard` per prototype (
 | `thumbnail` | `{ url, width, height }` for a thumbnail image |
 | `icon` | icon descriptor (alternative to thumbnail) |
 | `forceThumbnail` | render thumbnail container even without an image |
+| `thumbnailPosition` | `inline-start` (default), `inline-end`, or `block-start` (large image on top) |
+| `thumbnailSize` | `small` (default) or `large` |
+| `separation` | `outline` (default), `divider`, or `none` — visual separation in a card group |
 
 ## CdxTable
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
   CdxButton,
@@ -31,7 +31,11 @@ import {
   getEventWorklistOption,
   getEventWorklistRoute,
 } from '@/lib/event-worklist-storage'
-import { getCollectionArticles } from '../saved-items'
+import {
+  getAllCollectionNames,
+  getAllSavedArticleTitles,
+  getCollectionArticles,
+} from '../saved-items'
 
 definePage({
   meta: {
@@ -72,19 +76,65 @@ const VIEW_MENU_ITEMS: MenuButtonItemData[] = [
   { value: 'contributor', label: 'Contributor view' },
 ]
 
+const DESKTOP_MIN_WIDTH = 640
+
 const route = useRoute()
 const { user } = useConfig()
 
-const collectionName = computed(() => {
-  const value = route.query.collection
-  return typeof value === 'string' && value.trim() ? value.trim() : 'Saved items'
-})
-
-const isOwner = computed(() => user.value !== 'logged-out')
-
+const isWideViewport = ref(true)
 const articles = ref<SavedArticle[]>([])
 const loading = ref(true)
 const collectionView = ref<CollectionView>('grid')
+
+function syncViewportLayout() {
+  if (typeof window === 'undefined') return
+  isWideViewport.value = window.innerWidth >= DESKTOP_MIN_WIDTH
+}
+
+/** Mobile mock: list rows. Desktop mock: grid cards (unless list view chosen). */
+const useListLayout = computed(
+  () => !isWideViewport.value || collectionView.value === 'list',
+)
+
+type SavedPageMode = 'all' | 'collections' | 'collection'
+
+const savedPageMode = computed((): SavedPageMode => {
+  const collection = route.query.collection
+  if (typeof collection === 'string' && collection.trim()) return 'collection'
+  if (route.query.view === 'collections') return 'collections'
+  return 'all'
+})
+
+const collectionName = computed(() => {
+  const value = route.query.collection
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+})
+
+const pageTitle = computed(() => {
+  if (savedPageMode.value === 'collection') {
+    return `Saved / ${collectionName.value}`
+  }
+  if (savedPageMode.value === 'collections') {
+    return 'Saved'
+  }
+  return 'Saved / All items'
+})
+
+const collectionNames = computed(() => getAllCollectionNames())
+
+const allItemsLink = { path: '/collections-view-modes/saved', query: { view: 'all' } }
+const collectionsTabLink = { path: '/collections-view-modes/saved', query: { view: 'collections' } }
+
+function collectionLink(name: string) {
+  return { path: '/collections-view-modes/saved', query: { collection: name } }
+}
+
+function collectionItemCount(name: string) {
+  const count = getCollectionArticles(name).length
+  return `${count} ${count === 1 ? 'item' : 'items'}`
+}
+
+const isOwner = computed(() => user.value !== 'logged-out')
 const layoutMenuAction = ref<string | null>(null)
 const collectionMenuAction = ref<string | null>(null)
 
@@ -222,30 +272,62 @@ async function fetchSavedArticle(title: string, index: number): Promise<SavedArt
 }
 
 async function loadArticles() {
+  if (savedPageMode.value === 'collections') {
+    articles.value = []
+    loading.value = false
+    return
+  }
+
   loading.value = true
-  const titles = getCollectionArticles(collectionName.value)
+  const titles =
+    savedPageMode.value === 'all'
+      ? getAllSavedArticleTitles()
+      : getCollectionArticles(collectionName.value)
   articles.value = await Promise.all(titles.map((title, index) => fetchSavedArticle(title, index)))
   loading.value = false
 }
 
-onMounted(loadArticles)
+onMounted(() => {
+  syncViewportLayout()
+  window.addEventListener('resize', syncViewportLayout)
+  loadArticles()
+})
 
-watch(collectionName, loadArticles)
+onUnmounted(() => {
+  window.removeEventListener('resize', syncViewportLayout)
+})
+
+watch([collectionName, savedPageMode], loadArticles)
 </script>
 
 <template>
-  <ChromeWrapper skin="mobile">
+  <ChromeWrapper>
     <main class="cvm-saved">
       <h1 class="cvm-saved__title">
-        Saved / {{ collectionName }}
+        {{ pageTitle }}
       </h1>
 
       <nav class="cvm-saved__nav" aria-label="Saved views">
         <div class="cvm-saved__nav-links">
-          <a href="#" class="cvm-saved__nav-link">All items</a>
-          <a href="#" class="cvm-saved__nav-link">Collections</a>
+          <RouterLink
+            :to="allItemsLink"
+            class="cvm-saved__nav-link"
+            :class="{ 'cvm-saved__nav-link--active': savedPageMode === 'all' }"
+          >
+            All items
+          </RouterLink>
+          <RouterLink
+            :to="collectionsTabLink"
+            class="cvm-saved__nav-link"
+            :class="{
+              'cvm-saved__nav-link--active':
+                savedPageMode === 'collections' || savedPageMode === 'collection',
+            }"
+          >
+            Collections
+          </RouterLink>
         </div>
-        <div class="cvm-saved__nav-actions">
+        <div v-if="savedPageMode === 'collection'" class="cvm-saved__nav-actions">
           <CdxMenuButton
             v-model:selected="layoutMenuAction"
             class="cvm-saved__layout"
@@ -281,16 +363,37 @@ watch(collectionName, loadArticles)
         </div>
       </nav>
 
-      <p class="cvm-saved__sort">Sorted by most recent</p>
+      <template v-if="savedPageMode === 'collections'">
+        <p class="cvm-saved__sort">Sorted by most recent</p>
+        <ul class="cvm-saved__collection-list" role="list">
+          <li
+            v-for="name in collectionNames"
+            :key="name"
+            class="cvm-saved__collection-row"
+          >
+            <RouterLink :to="collectionLink(name)" class="cvm-saved__collection-name">
+              {{ name }}
+            </RouterLink>
+            <span class="cvm-saved__collection-count">{{ collectionItemCount(name) }}</span>
+          </li>
+        </ul>
+      </template>
 
-      <CdxProgressBar v-if="loading" inline aria-label="Loading saved articles" />
+      <template v-else>
+        <p class="cvm-saved__sort">Sorted by most recent</p>
 
-      <p v-else-if="!articles.length" class="cvm-saved__empty">
-        No articles in this collection yet.
-      </p>
+        <CdxProgressBar v-if="loading" inline aria-label="Loading saved articles" />
 
-      <ul
-        v-else-if="collectionView === 'list'"
+        <p v-else-if="!articles.length" class="cvm-saved__empty">
+          {{
+            savedPageMode === 'all'
+              ? 'No saved articles yet. Save a page from an article to get started.'
+              : 'No articles in this collection yet.'
+          }}
+        </p>
+
+        <ul
+          v-else-if="useListLayout"
         class="cvm-saved__rows"
         role="list"
       >
@@ -314,25 +417,26 @@ watch(collectionName, loadArticles)
         </li>
       </ul>
 
-      <ul
-        v-else
-        class="cvm-saved__cards"
+        <ul
+          v-else
+          class="cvm-saved__cards"
+        :class="{ 'cvm-saved__cards--contributor': collectionView === 'contributor' }"
         role="list"
       >
         <li v-for="article in articles" :key="article.title" class="cvm-saved__card">
           <CdxThumbnail
-            class="cvm-saved__thumbnail"
+            class="cvm-saved__card-thumb"
             :thumbnail="article.thumbnail"
             :placeholder-icon="cdxIconImage"
           />
-          <div class="cvm-saved__item-body">
+          <div class="cvm-saved__card-body">
             <a
-              class="cvm-saved__item-title"
+              class="cvm-saved__card-title"
               :href="article.url"
               target="_blank"
               rel="noopener noreferrer"
             >{{ article.title }}</a>
-            <p v-if="article.description" class="cvm-saved__item-description">
+            <p v-if="article.description" class="cvm-saved__card-description">
               {{ article.description }}
             </p>
 
@@ -387,7 +491,8 @@ watch(collectionName, loadArticles)
             </div>
           </div>
         </li>
-      </ul>
+        </ul>
+      </template>
     </main>
 
     <CdxMessage
@@ -500,8 +605,13 @@ watch(collectionName, loadArticles)
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
   line-height: var(--line-height-medium);
-  color: var(--color-progressive);
+  color: var(--color-base);
   text-decoration: none;
+}
+
+.cvm-saved__nav-link--active {
+  color: var(--color-progressive);
+  font-weight: var(--font-weight-bold);
 }
 
 .cvm-saved__nav-link:hover {
@@ -552,6 +662,50 @@ watch(collectionName, loadArticles)
   color: var(--color-subtle);
 }
 
+.cvm-saved__collection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--border-width-base) solid var(--border-color-subtle);
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.cvm-saved__collection-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-100);
+  padding: var(--spacing-100) 0;
+  border-bottom: var(--border-width-base) solid var(--border-color-subtle);
+}
+
+.cvm-saved__collection-row:last-child {
+  border-bottom: none;
+}
+
+.cvm-saved__collection-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-medium);
+  color: var(--color-progressive);
+  text-decoration: none;
+}
+
+.cvm-saved__collection-name:hover {
+  text-decoration: underline;
+}
+
+.cvm-saved__collection-count {
+  flex-shrink: 0;
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  line-height: var(--line-height-medium);
+  color: var(--color-subtle);
+}
+
 .cvm-saved__rows {
   list-style: none;
   margin: 0;
@@ -562,9 +716,9 @@ watch(collectionName, loadArticles)
 
 .cvm-saved__row {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-75);
-  padding: var(--spacing-75) 0;
+  align-items: flex-start;
+  gap: var(--spacing-100);
+  padding: var(--spacing-100) 0;
   border-bottom: var(--border-width-base) solid var(--border-color-subtle);
 }
 
@@ -592,8 +746,8 @@ watch(collectionName, loadArticles)
   height: 4.5rem;
   min-width: 0;
   min-height: 0;
-  border: none;
-  border-radius: 0;
+  border: var(--border-width-base) solid var(--border-color-subtle);
+  border-radius: var(--border-radius-base);
   object-fit: cover;
 }
 
@@ -634,8 +788,8 @@ watch(collectionName, loadArticles)
 
 .cvm-saved__cards {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-50);
+  flex-wrap: wrap;
+  gap: var(--spacing-100);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -643,72 +797,97 @@ watch(collectionName, loadArticles)
 
 .cvm-saved__card {
   display: flex;
-  align-items: stretch;
-  min-height: 6.5rem;
-  padding: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 10.5rem;
+  height: 280px;
+  min-height: 280px;
+  gap: var(--spacing-75);
+  padding: var(--spacing-75, 12px);
+  overflow: hidden;
+  background: var(--background-color-base);
   border: var(--border-width-base) solid var(--border-color-subtle);
 }
 
-.cvm-saved__thumbnail {
-  flex: 0 0 40%;
-  width: 40%;
-  max-width: 9.5rem;
-  margin: 0;
-  align-self: stretch;
+.cvm-saved__cards--contributor .cvm-saved__card {
+  width: 14rem;
+  height: auto;
+  overflow: visible;
 }
 
-.cvm-saved__thumbnail:deep(.cdx-thumbnail) {
+.cvm-saved__card-thumb {
+  display: block;
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0;
+  aspect-ratio: 1;
+}
+
+.cvm-saved__card-thumb:deep(.cdx-thumbnail) {
   display: flex;
   width: 100%;
   height: 100%;
-  min-height: 6.5rem;
   margin: 0;
 }
 
-.cvm-saved__thumbnail:deep(.cdx-thumbnail__image),
-.cvm-saved__thumbnail:deep(.cdx-thumbnail__placeholder) {
+.cvm-saved__card-thumb:deep(.cdx-thumbnail__image),
+.cvm-saved__card-thumb:deep(.cdx-thumbnail__placeholder) {
   width: 100%;
   height: 100%;
   min-width: 0;
-  min-height: 6.5rem;
-  border: none;
-  border-radius: 0;
+  min-height: 0;
+  border: var(--border-width-base) solid var(--border-color-subtle);
+  border-radius: var(--border-radius-base);
+  object-fit: cover;
 }
 
-.cvm-saved__thumbnail:deep(.cdx-thumbnail__placeholder__icon) {
+.cvm-saved__card-thumb:deep(.cdx-thumbnail__placeholder__icon) {
   width: 2rem;
   height: 2rem;
 }
 
-.cvm-saved__item-body {
+.cvm-saved__card-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: var(--spacing-35);
+  gap: var(--spacing-25);
   min-width: 0;
-  padding: var(--spacing-100);
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
-.cvm-saved__item-title {
-  font-family: var(--font-family-serif);
-  font-size: var(--font-size-x-large);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-x-large);
+.cvm-saved__card-title {
+  font-family: var(--font-family-system-sans);
+  font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-medium);
   color: var(--color-base);
   text-decoration: none;
 }
 
-.cvm-saved__item-title:hover {
+.cvm-saved__card-title:hover {
   text-decoration: underline;
 }
 
-.cvm-saved__item-description {
+.cvm-saved__card-description {
   margin: 0;
   font-family: var(--font-family-system-sans);
   font-size: var(--font-size-medium);
+  font-weight: var(--font-weight-normal);
   line-height: var(--line-height-medium);
   color: var(--color-subtle);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.cvm-saved__cards--contributor .cvm-saved__card-description {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .cvm-saved__signals {
