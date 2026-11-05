@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { CdxButton, CdxIcon } from '@wikimedia/codex'
-import { cdxIconCheck, cdxIconSettings } from '@wikimedia/codex-icons'
+import { computed, ref, watch } from 'vue'
+import { CdxIcon, CdxMenuButton, type MenuGroupData, type MenuItemValue } from '@wikimedia/codex'
+import { cdxIconSettings } from '@wikimedia/codex-icons'
 
 import PulsatingOnboardingDot from './PulsatingOnboardingDot.vue'
+import { EDITING_INFO_MENU_HINT, EDITING_INFO_MENU_LABEL } from './globalEditingInfoSetting'
 import { useCollections } from './useCollections'
 
-defineProps<{ showLayout?: boolean }>()
+const props = defineProps<{ showLayout?: boolean }>()
 
 const { ui } = useCollections()
 
@@ -14,206 +15,89 @@ const showEditingInfoIntroDot = computed(
   () => !ui.editingInfoIntroComplete && !ui.showEditingInfo,
 )
 
-const open = ref(false)
-const rootRef = ref<HTMLElement | null>(null)
+const menuSelected = ref<MenuItemValue | MenuItemValue[] | null>(null)
 
-function closeMenu() {
-  open.value = false
-}
-
-function onDocPointerDown(event: PointerEvent) {
-  if (!rootRef.value?.contains(event.target as Node)) closeMenu()
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeMenu()
-}
-
-watch(open, (isOpen) => {
-  if (isOpen) {
-    document.addEventListener('pointerdown', onDocPointerDown)
-    document.addEventListener('keydown', onKeydown)
-  } else {
-    document.removeEventListener('pointerdown', onDocPointerDown)
-    document.removeEventListener('keydown', onKeydown)
+const menuItems = computed(() => {
+  const items: (MenuGroupData | { value: string; label: string; description: string })[] = [
+    {
+      value: 'editing-info',
+      label: EDITING_INFO_MENU_LABEL,
+      description: EDITING_INFO_MENU_HINT,
+    },
+  ]
+  if (props.showLayout) {
+    items.push({
+      label: 'Layout',
+      items: [
+        { value: 'expanded', label: 'Cards' },
+        { value: 'compact', label: 'Compact' },
+      ],
+    })
   }
+  return items
 })
 
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onDocPointerDown)
-  document.removeEventListener('keydown', onKeydown)
-})
-
-function setCollectionsView(mode: 'expanded' | 'compact') {
-  ui.collectionsView = mode
+function syncMenuSelected() {
+  const selected: MenuItemValue[] = []
+  if (ui.showEditingInfo) selected.push('editing-info')
+  if (props.showLayout) selected.push(ui.collectionsView)
+  menuSelected.value = selected.length ? selected : null
 }
 
-function onToggleEditingInfo() {
-  ui.showEditingInfo = !ui.showEditingInfo
+watch([() => ui.showEditingInfo, () => ui.collectionsView, () => props.showLayout], syncMenuSelected, {
+  immediate: true,
+})
+
+function selectedValues(value: MenuItemValue | MenuItemValue[] | null): MenuItemValue[] {
+  if (value == null) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+function onMenuSelected(value: MenuItemValue | MenuItemValue[] | null) {
+  const values = selectedValues(value)
+  ui.showEditingInfo = values.includes('editing-info')
+  if (values.includes('expanded')) ui.collectionsView = 'expanded'
+  if (values.includes('compact')) ui.collectionsView = 'compact'
+  syncMenuSelected()
 }
 </script>
 
 <template>
-  <div ref="rootRef" class="pc-collection-settings">
-    <span class="pc-collection-settings__trigger">
-      <CdxButton
-        weight="quiet"
-        :icon-only="true"
-        aria-label="Collections settings"
-        :aria-expanded="open"
-        aria-haspopup="menu"
-        @click="open = !open"
-      >
-        <CdxIcon :icon="cdxIconSettings" size="medium" />
-      </CdxButton>
-      <PulsatingOnboardingDot :visible="showEditingInfoIntroDot" />
-    </span>
-
-    <div v-if="open" class="pc-collection-settings__panel" role="menu">
-      <button
-        type="button"
-        class="pc-collection-settings__item"
-        :class="{ 'pc-collection-settings__item--selected': ui.showEditingInfo }"
-        role="menuitemcheckbox"
-        :aria-checked="ui.showEditingInfo"
-        @click="onToggleEditingInfo"
-      >
-        <span class="pc-collection-settings__check-slot" aria-hidden="true">
-          <CdxIcon
-            v-if="ui.showEditingInfo"
-            class="pc-collection-settings__check"
-            :icon="cdxIconCheck"
-            size="small"
-          />
-        </span>
-        Display editing information
-      </button>
-      <template v-if="showLayout">
-        <p class="pc-collection-settings__group-label">Layout</p>
-        <button
-          type="button"
-          class="pc-collection-settings__item pc-collection-settings__item--nested"
-          :class="{ 'pc-collection-settings__item--selected': ui.collectionsView === 'expanded' }"
-          role="menuitemradio"
-          :aria-checked="ui.collectionsView === 'expanded'"
-          @click="setCollectionsView('expanded')"
-        >
-          <span class="pc-collection-settings__check-slot" aria-hidden="true">
-            <CdxIcon
-              v-if="ui.collectionsView === 'expanded'"
-              class="pc-collection-settings__check"
-              :icon="cdxIconCheck"
-              size="small"
-            />
-          </span>
-          Cards
-        </button>
-        <button
-          type="button"
-          class="pc-collection-settings__item pc-collection-settings__item--nested"
-          :class="{ 'pc-collection-settings__item--selected': ui.collectionsView === 'compact' }"
-          role="menuitemradio"
-          :aria-checked="ui.collectionsView === 'compact'"
-          @click="setCollectionsView('compact')"
-        >
-          <span class="pc-collection-settings__check-slot" aria-hidden="true">
-            <CdxIcon
-              v-if="ui.collectionsView === 'compact'"
-              class="pc-collection-settings__check"
-              :icon="cdxIconCheck"
-              size="small"
-            />
-          </span>
-          Compact
-        </button>
-      </template>
-    </div>
-  </div>
+  <span class="pc-collection-settings">
+    <CdxMenuButton
+      v-model:selected="menuSelected"
+      class="pc-collection-settings__button"
+      weight="quiet"
+      :menu-items="menuItems"
+      :menu-config="{ placement: 'bottom-end', renderInPlace: true }"
+      aria-label="Collections settings"
+      @update:selected="onMenuSelected"
+    >
+      <CdxIcon :icon="cdxIconSettings" size="medium" />
+    </CdxMenuButton>
+    <PulsatingOnboardingDot :visible="showEditingInfoIntroDot" />
+  </span>
 </template>
 
 <style scoped>
 .pc-collection-settings {
   position: relative;
+  display: inline-flex;
   flex-shrink: 0;
   margin-inline-start: auto;
-}
-
-.pc-collection-settings__trigger {
-  position: relative;
-  display: inline-flex;
   overflow: visible;
 }
 
-.pc-collection-settings__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 50;
-  box-sizing: border-box;
-  min-width: 19rem;
-  padding: 0;
-  border: var(--border-width-base, 1px) solid var(--border-color-base, #a2a9b1);
-  border-radius: var(--border-radius-base, 2px);
-  background: var(--background-color-base, #fff);
-  box-shadow: 0 4px 8px 0 var(--box-shadow-color-alpha-base, rgba(0, 0, 0, 0.06));
-}
-
-.pc-collection-settings__group-label {
-  margin: 0;
-  padding: var(--spacing-75, 12px) var(--spacing-75, 12px) var(--spacing-25, 4px);
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium, 16px);
-  font-weight: var(--font-weight-bold, 700);
-  line-height: var(--line-height-small, 1.375);
-  color: var(--color-base, #202122);
-}
-
-.pc-collection-settings__item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-50, 8px);
-  width: 100%;
-  margin: 0;
-  padding: var(--spacing-50, 8px) var(--spacing-75, 12px);
-  border: 0;
-  background: none;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium, 16px);
-  line-height: var(--line-height-small, 1.375);
-  color: var(--color-base, #202122);
-  text-align: start;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pc-collection-settings__item:hover {
-  background: var(--background-color-interactive-subtle--hover, #eaecf0);
-}
-
-.pc-collection-settings__item--selected {
-  color: var(--color-progressive, #36c);
-  background: var(--background-color-progressive-subtle, #eaf3ff);
-}
-
-.pc-collection-settings__item--selected:hover {
-  background: var(--background-color-progressive-subtle--hover, #dbe8ff);
-}
-
-.pc-collection-settings__item--nested {
-  padding-inline-start: var(--spacing-150, 24px);
-}
-
-.pc-collection-settings__check-slot {
-  display: flex;
+.pc-collection-settings__button {
   flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: var(--size-icon-small, 16px);
-  height: var(--size-icon-small, 16px);
 }
 
-.pc-collection-settings__check {
-  flex-shrink: 0;
-  color: var(--color-progressive, #36c);
+.pc-collection-settings :deep(.cdx-menu-item__content) {
+  column-gap: var(--spacing-50, 8px);
+}
+
+.pc-collection-settings :deep(.cdx-menu-item__selected-icon) {
+  order: -1;
+  margin: 0;
 }
 </style>

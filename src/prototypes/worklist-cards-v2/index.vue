@@ -37,10 +37,6 @@ import {
   saveWorklistArticleTitles,
 } from '@/lib/event-worklist-storage'
 import {
-  otherSuggestedTaskCount,
-  otherSuggestedTasksSuffix,
-} from '@/lib/worklist-card-signals'
-import {
   COLLECTION_LOOKUP_PREFIX,
   collectionNameFromLine,
   formatCollectionLine,
@@ -198,18 +194,9 @@ const RECOMMENDED_TASK_PRIORITY: readonly string[] = [
   'Add categories',
 ]
 
-/** Demo tasks per card — lead task cycles all eight types; optional lower-priority extra for filters. */
+/** One demo editing need per card (lead task cycles all eight types). */
 function fakeSuggestions(index: number): string[] {
-  const lead = RECOMMENDED_TASKS[index % RECOMMENDED_TASKS.length]
-  const leadRank = RECOMMENDED_TASK_PRIORITY.indexOf(lead)
-  const lowerPriority = RECOMMENDED_TASK_PRIORITY.slice(leadRank + 1)
-  if (!lowerPriority.length) return [lead]
-  if (index % 4 === 0) {
-    const extras = lowerPriority.slice(0, 5)
-    return uniqueSuggestions([lead, ...extras])
-  }
-  const extra = lowerPriority[(index + 1) % lowerPriority.length]
-  return extra === lead ? [lead] : [lead, extra]
+  return [RECOMMENDED_TASKS[index % RECOMMENDED_TASKS.length]]
 }
 
 function uniqueSuggestions(suggestions: string[]): string[] {
@@ -264,14 +251,10 @@ function fakeViews(index: number): string {
 
 const QUALITY_CHIP_STATUS = 'subtle' as const
 
-const IMPACT_OPPORTUNITY_LABEL: Record<QualityBand, string> = {
-  low: 'High impact opportunity',
-  medium: 'Medium impact opportunity',
-  high: 'Low impact opportunity',
-}
+const HIGH_IMPACT_CHIP_LABEL = 'High impact opportunity'
 
-function qualityLabel(score: number): string {
-  return IMPACT_OPPORTUNITY_LABEL[qualityBand(score)]
+function showHighImpactChip(score: number): boolean {
+  return qualityBand(score) === 'low'
 }
 
 function shortViewsLabel(viewsCount: number): string {
@@ -920,10 +903,13 @@ watch(eventWorklistId, loadWorklistCards)
                 </div>
 
                 <div class="wc2__card-body">
-                  <div class="wc2__card-header">
-                    <div class="wc2__quality-chip">
+                  <div
+                    class="wc2__card-header"
+                    :class="{ 'wc2__card-header--chipless': !showHighImpactChip(card.qualityScore) }"
+                  >
+                    <div v-if="showHighImpactChip(card.qualityScore)" class="wc2__quality-chip">
                       <CdxInfoChip :status="QUALITY_CHIP_STATUS">
-                        {{ qualityLabel(card.qualityScore) }}
+                        {{ HIGH_IMPACT_CHIP_LABEL }}
                       </CdxInfoChip>
                     </div>
                     <CdxButton
@@ -1013,12 +999,6 @@ watch(eventWorklistId, loadWorklistCards)
                             class="wc2__suggestion-text"
                           >
                             {{ primaryRecommendedTask(card.suggestions) }}
-                          </span>
-                          <span
-                            v-if="otherSuggestedTaskCount(card.suggestions)"
-                            class="wc2__suggestion-remainder"
-                          >
-                            {{ otherSuggestedTasksSuffix(otherSuggestedTaskCount(card.suggestions)) }}
                           </span>
                         </template>
                       </span>
@@ -1494,6 +1474,7 @@ watch(eventWorklistId, loadWorklistCards)
 }
 
 .wc2__card-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-75);
@@ -1556,6 +1537,15 @@ watch(eventWorklistId, loadWorklistCards)
   gap: var(--spacing-50);
   width: 100%;
   min-width: 0;
+}
+
+/* No impact chip: trash only — don’t reserve a full header row above the thumbnail. */
+.wc2__card-header--chipless {
+  position: absolute;
+  top: var(--spacing-75);
+  right: var(--spacing-75);
+  z-index: 1;
+  width: auto;
 }
 
 .wc2__quality-chip {

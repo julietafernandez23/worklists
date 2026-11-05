@@ -1,21 +1,39 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { CdxButton, CdxDialog, CdxField, CdxIcon, CdxTextInput } from '@wikimedia/codex'
+import {
+  CdxDialog,
+  CdxField,
+  CdxIcon,
+  CdxMenuButton,
+  CdxTextInput,
+  type MenuButtonItemData,
+  type MenuItemValue,
+} from '@wikimedia/codex'
 import { cdxIconSettings } from '@wikimedia/codex-icons'
 
+import { EDITING_INFO_MENU_HINT, EDITING_INFO_MENU_LABEL } from './globalEditingInfoSetting'
 import { SAVED_PATH, useCollections, type Collection } from './useCollections'
 
 const props = defineProps<{ collection: Collection }>()
 
 const router = useRouter()
-const { nameTaken, renameCollection, deleteCollection } = useCollections()
+const { ui, nameTaken, renameCollection, deleteCollection } = useCollections()
 
-const open = ref(false)
-const rootRef = ref<HTMLElement | null>(null)
+const menuSelected = ref<MenuItemValue | MenuItemValue[] | null>(null)
 const renameOpen = ref(false)
 const renameValue = ref('')
 const renameInputRef = ref<InstanceType<typeof CdxTextInput> | null>(null)
+
+const menuItems = computed((): MenuButtonItemData[] => [
+  { value: 'rename', label: 'Rename collection' },
+  {
+    value: 'editing-info',
+    label: EDITING_INFO_MENU_LABEL,
+    description: EDITING_INFO_MENU_HINT,
+  },
+  { value: 'delete', label: 'Delete collection', action: 'destructive' },
+])
 
 const renameTrimmed = computed(() => renameValue.value.trim())
 const renameDuplicate = computed(
@@ -23,40 +41,18 @@ const renameDuplicate = computed(
 )
 const renameCanSave = computed(() => renameTrimmed.value.length > 0 && !renameDuplicate.value)
 
-function closeMenu() {
-  open.value = false
+function syncMenuSelected() {
+  menuSelected.value = ui.showEditingInfo ? ['editing-info'] : null
 }
 
-function onDocPointerDown(event: PointerEvent) {
-  if (!rootRef.value?.contains(event.target as Node)) closeMenu()
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeMenu()
-}
-
-watch(open, (isOpen) => {
-  if (isOpen) {
-    document.addEventListener('pointerdown', onDocPointerDown)
-    document.addEventListener('keydown', onKeydown)
-  } else {
-    document.removeEventListener('pointerdown', onDocPointerDown)
-    document.removeEventListener('keydown', onKeydown)
-  }
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onDocPointerDown)
-  document.removeEventListener('keydown', onKeydown)
-})
+watch(() => ui.showEditingInfo, syncMenuSelected, { immediate: true })
 
 watch(
   () => props.collection.id,
-  () => closeMenu(),
+  () => syncMenuSelected(),
 )
 
 function onRenameClick() {
-  closeMenu()
   renameValue.value = props.collection.name
   renameOpen.value = true
 }
@@ -76,39 +72,36 @@ function confirmRename() {
 
 function onDeleteClick() {
   const id = props.collection.id
-  closeMenu()
   deleteCollection(id)
   void router.push({ path: SAVED_PATH, query: { view: 'collections' } })
+}
+
+function selectedValues(value: MenuItemValue | MenuItemValue[] | null): MenuItemValue[] {
+  if (value == null) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+function onMenuSelected(value: MenuItemValue | MenuItemValue[] | null) {
+  const values = selectedValues(value)
+  if (values.includes('rename')) onRenameClick()
+  if (values.includes('delete')) onDeleteClick()
+  ui.showEditingInfo = values.includes('editing-info')
+  syncMenuSelected()
 }
 </script>
 
 <template>
-  <div ref="rootRef" class="pc-collection-settings">
-    <CdxButton
-      weight="quiet"
-      :icon-only="true"
-      aria-label="Collection settings"
-      :aria-expanded="open"
-      aria-haspopup="menu"
-      @click="open = !open"
-    >
-      <CdxIcon :icon="cdxIconSettings" size="medium" />
-    </CdxButton>
-
-    <div v-if="open" class="pc-collection-settings__panel" role="menu">
-      <button type="button" class="pc-collection-settings__item" role="menuitem" @click="onRenameClick">
-        Rename collection
-      </button>
-      <button
-        type="button"
-        class="pc-collection-settings__item pc-collection-settings__item--destructive"
-        role="menuitem"
-        @click="onDeleteClick"
-      >
-        Delete collection
-      </button>
-    </div>
-  </div>
+  <CdxMenuButton
+    v-model:selected="menuSelected"
+    class="pc-collection-settings"
+    weight="quiet"
+    :menu-items="menuItems"
+    :menu-config="{ placement: 'bottom-end', renderInPlace: true }"
+    aria-label="Collection settings"
+    @update:selected="onMenuSelected"
+  >
+    <CdxIcon :icon="cdxIconSettings" size="medium" />
+  </CdxMenuButton>
 
   <CdxDialog
     v-model:open="renameOpen"
@@ -140,52 +133,17 @@ function onDeleteClick() {
 
 <style scoped>
 .pc-collection-settings {
-  position: relative;
   flex-shrink: 0;
   margin-inline-start: auto;
 }
 
-.pc-collection-settings__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 50;
-  box-sizing: border-box;
-  min-width: 19rem;
-  padding: 0;
-  border: var(--border-width-base, 1px) solid var(--border-color-base, #a2a9b1);
-  border-radius: var(--border-radius-base, 2px);
-  background: var(--background-color-base, #fff);
-  box-shadow: 0 4px 8px 0 var(--box-shadow-color-alpha-base, rgba(0, 0, 0, 0.06));
+/* Codex multiselect checks default to the trailing edge; collections settings match design (leading). */
+.pc-collection-settings :deep(.cdx-menu-item__content) {
+  column-gap: var(--spacing-50, 8px);
 }
 
-.pc-collection-settings__item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-50, 8px);
-  width: 100%;
+.pc-collection-settings :deep(.cdx-menu-item__selected-icon) {
+  order: -1;
   margin: 0;
-  padding: var(--spacing-50, 8px) var(--spacing-75, 12px);
-  border: 0;
-  background: none;
-  font-family: var(--font-family-system-sans);
-  font-size: var(--font-size-medium, 16px);
-  line-height: var(--line-height-small, 1.375);
-  color: var(--color-base, #202122);
-  text-align: start;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pc-collection-settings__item:hover {
-  background: var(--background-color-interactive-subtle--hover, #eaecf0);
-}
-
-.pc-collection-settings__item--destructive {
-  color: var(--color-destructive, #d73333);
-}
-
-.pc-collection-settings__item--destructive:hover {
-  background: var(--background-color-error-subtle, #fee7e6);
 }
 </style>
