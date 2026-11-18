@@ -29,7 +29,7 @@ export function useToast() {
     clearTimeout(timer)
     actionHandler = onAction
     state.current = { ...toast, id: nextId++ }
-    if (toast.variant !== 'snackbar') {
+    if (toast.variant !== 'snackbar' || !toast.actionLabel) {
       timer = setTimeout(dismiss, TOAST_MS)
     }
   }

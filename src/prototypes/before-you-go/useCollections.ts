@@ -2,6 +2,11 @@ import { computed, reactive, watch } from 'vue'
 
 import { wikimediaApiFetchHeaders } from '@/config'
 
+import {
+  DEFAULT_EXPLORATIONS,
+  type BeforeYouGoExplorations,
+} from './beforeYouGoExplorations'
+
 /**
  * Shared, localStorage-backed state for the saved-items + collections prototype.
  * Module-level so the article page and Special:Saved see the same data.
@@ -16,6 +21,12 @@ export interface Collection {
   name: string
   /** Last modified: created, or an item added or removed. Lists sort by this, newest first. */
   updatedAt: number
+}
+
+export const EDIT_LATER_COLLECTION_NAME = 'Edit later'
+
+export function isEditLaterCollection(collection: Collection | null | undefined): boolean {
+  return collection?.name.toLowerCase() === EDIT_LATER_COLLECTION_NAME.toLowerCase()
 }
 
 export type SaveKind = 'article' | 'section' | 'passage'
@@ -67,6 +78,7 @@ const NAV_KEY = 'protowiki:before-you-go:nav:v1'
 const COLLECTIONS_VIEW_KEY = 'protowiki:before-you-go:collections-view:v1'
 const EDITING_INFO_KEY = 'protowiki:before-you-go:editing-info:v1'
 const EDITING_INFO_INTRO_KEY = 'protowiki:before-you-go:editing-info-intro:v1'
+const EXPLORATIONS_KEY = 'protowiki:before-you-go:explorations:v1'
 
 /**
  * Saved page navigation on desktop, picked from the Prototype menu (phones
@@ -330,6 +342,24 @@ function initialState(): State {
 }
 
 const state = reactive<State>(initialState())
+function readExplorations(): BeforeYouGoExplorations {
+  const stored = readStorage<Record<string, unknown>>(EXPLORATIONS_KEY)
+  if (stored && typeof stored.veExitEditLater === 'string') {
+    const mode = stored.veExitEditLater
+    if (mode === 'toast' || mode === 'popover' || mode === 'choose-save-popover' || mode === 'off') {
+      return { veExitEditLater: mode }
+    }
+  }
+  if (stored && 'veExitEditLaterToast' in stored) {
+    return {
+      veExitEditLater: stored.veExitEditLaterToast === false ? 'off' : 'toast',
+    }
+  }
+  return { ...DEFAULT_EXPLORATIONS }
+}
+
+const explorations = reactive<BeforeYouGoExplorations>(readExplorations())
+
 const ui = reactive({
   pinned: readStorage<boolean>(PIN_KEY) === true,
   nav: (readStorage<SavedNav>(NAV_KEY) === 'tabs' ? 'tabs' : 'collections-page') as SavedNav,
@@ -370,6 +400,25 @@ watch(
 watch(
   () => ui.editingInfoIntroComplete,
   (done) => writeStorage(EDITING_INFO_INTRO_KEY, done),
+)
+watch(
+  explorations,
+  (value) => writeStorage(EXPLORATIONS_KEY, value),
+  { deep: true },
+)
+
+function usesPreFilledSaves(): boolean {
+  return SEED_COLLECTIONS.some((seed) => state.collections.some((c) => c.id === seed.id))
+}
+
+/** Switching VE exit explorations starts each variant from a clean save state. */
+watch(
+  () => explorations.veExitEditLater,
+  (_mode, prev) => {
+    if (prev === undefined) return
+    Object.assign(state, seedState(usesPreFilledSaves()))
+    ui.showEditingInfo = false
+  },
 )
 
 function slugify(name: string): string {
@@ -542,6 +591,7 @@ export function useCollections() {
     collections,
     items,
     ui,
+    explorations,
     getItem,
     isSaved,
     save,

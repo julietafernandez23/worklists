@@ -26,7 +26,12 @@ import CollectionThumb from '../CollectionThumb.vue'
 import CreateCollectionDialog from '../CreateCollectionDialog.vue'
 import SavedCard from '../SavedCard.vue'
 import SavedChrome from '../SavedChrome.vue'
-import { SAVED_PATH, useCollections, type Collection } from '../useCollections'
+import {
+  isEditLaterCollection,
+  SAVED_PATH,
+  useCollections,
+  type Collection,
+} from '../useCollections'
 import { globalSkin } from '@/theme'
 
 const SAVED_PAGE = SAVED_PATH
@@ -37,6 +42,15 @@ const { collections, ui, findCollection, itemsIn } = useCollections()
 
 const activeCollection = computed(() => findCollection(String(route.query.collection ?? '')))
 const visibleItems = computed(() => itemsIn(activeCollection.value?.id))
+
+/** Edit later links land here — turn on editing signals for that collection view. */
+watch(
+  activeCollection,
+  (collection) => {
+    if (isEditLaterCollection(collection)) ui.showEditingInfo = true
+  },
+  { immediate: true },
+)
 
 /** Phones (Minerva) get their own layout: All items / Collections tabs, collections as a list. */
 const isMobile = computed(() => globalSkin.value === 'mobile')

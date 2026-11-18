@@ -26,13 +26,28 @@ const isSnackbar = computed(() => current.value?.variant === 'snackbar')
         v-if="current && isSnackbar"
         :key="current.id"
         class="prototype-snackbar"
-        :class="{ 'prototype-snackbar--mobile': isMobile }"
+        :class="{
+          'prototype-snackbar--mobile': isMobile,
+          'prototype-snackbar--centered':
+            !current.title && !current.actionLabel && !!current.link,
+        }"
         role="status"
         aria-live="polite"
       >
         <div class="prototype-snackbar__copy">
           <p v-if="current.title" class="prototype-snackbar__title">{{ current.title }}</p>
-          <p class="prototype-snackbar__body">{{ current.text }}</p>
+          <p class="prototype-snackbar__body">
+            {{ current.text }}
+            <RouterLink
+              v-if="current.link"
+              class="prototype-snackbar__link"
+              :to="current.link.to"
+              @click="dismiss"
+            >
+              {{ current.link.label }}
+            </RouterLink>
+            <template v-if="current.link">.</template>
+          </p>
         </div>
         <button
           v-if="current.actionLabel"
@@ -115,6 +130,17 @@ const isSnackbar = computed(() => current.value?.variant === 'snackbar')
   max-width: calc(100vw - 32px);
 }
 
+.prototype-snackbar--centered {
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+}
+
+.prototype-snackbar--centered .prototype-snackbar__copy {
+  flex: 0 1 auto;
+  text-align: center;
+}
+
 .prototype-snackbar__copy {
   flex: 1 1 auto;
   min-width: 0;
@@ -132,6 +158,12 @@ const isSnackbar = computed(() => current.value?.variant === 'snackbar')
   font-size: var(--font-size-medium, 16px);
   font-weight: var(--font-weight-normal, 400);
   line-height: var(--line-height-small, 1.375);
+}
+
+.prototype-snackbar__link {
+  color: #fff;
+  font-weight: var(--font-weight-bold, 700);
+  text-decoration: underline;
 }
 
 .prototype-snackbar__title + .prototype-snackbar__body {

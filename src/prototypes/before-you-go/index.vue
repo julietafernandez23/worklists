@@ -24,6 +24,8 @@ import InArticleSaves from './InArticleSaves.vue'
 import SavedChrome from './SavedChrome.vue'
 import SavePopover from './SavePopover.vue'
 import StickyHeader from './StickyHeader.vue'
+import VeExitChooseSavePopover from './VeExitChooseSavePopover.vue'
+import VeExitEditLaterPopover from './VeExitEditLaterPopover.vue'
 import VisualEditorStandIn from './VisualEditorStandIn.vue'
 import {
   ARTICLE_PATH,
@@ -31,6 +33,7 @@ import {
   labelOf,
   normalizeTitle,
   SAVED_PATH,
+  EDIT_LATER_COLLECTION_NAME,
   useCollections,
   type Collection,
   type SaveTarget,
@@ -39,7 +42,7 @@ import { useToast } from './useToast'
 
 const route = useRoute()
 const router = useRouter()
-const EDIT_LATER_COLLECTION = 'Edit later'
+const EDIT_LATER_COLLECTION = EDIT_LATER_COLLECTION_NAME
 
 const {
   isSaved,
@@ -51,6 +54,7 @@ const {
   onboarding,
   createCollection,
   collections,
+  explorations,
 } = useCollections()
 const { show, dismiss } = useToast()
 
@@ -73,10 +77,17 @@ const popoverTarget = ref<SaveTarget>({ kind: 'article', title: article.value })
 const popoverAddedTo = ref<{ id: string; name: string } | null>(null)
 const dialogOpen = ref(false)
 const veMode = ref(false)
+const veExitPopoverOpen = ref(false)
+const veExitChooseSaveOpen = ref(false)
+const veExitUndoKey = ref<string | null>(null)
+const veExitCollectionId = ref('')
+const veExitCollectionName = ref(EDIT_LATER_COLLECTION)
 
 watch(article, () => {
   popoverOpen.value = false
   popoverAddedTo.value = null
+  veExitPopoverOpen.value = false
+  veExitChooseSaveOpen.value = false
   parserRoot.value = null
   veMode.value = false
   window.scrollTo(0, 0)
@@ -85,6 +96,20 @@ watch(article, () => {
 watch(popoverOpen, (open) => {
   if (!open) popoverAddedTo.value = null
 })
+
+watch(
+  () => explorations.veExitEditLater,
+  (_mode, prev) => {
+    if (prev === undefined) return
+    dismiss()
+    veExitPopoverOpen.value = false
+    veExitChooseSaveOpen.value = false
+    popoverOpen.value = false
+    popoverAddedTo.value = null
+    veMode.value = false
+    veExitUndoKey.value = null
+  },
+)
 
 function openVisualEditor() {
   popoverOpen.value = false
@@ -103,28 +128,71 @@ function ensureEditLaterCollection(): Collection {
   return existing ?? createCollection(EDIT_LATER_COLLECTION)
 }
 
-/** Left the editor without publishing → save to Edit later and confirm with Codex toast. */
+/** Left the editor without publishing → optional Edit later toast / popover exploration. */
 function onVeExitWithoutEdits() {
+  veMode.value = false
+  const mode = explorations.veExitEditLater
+  if (mode === 'off') return
+
+  popoverOpen.value = false
+  dismiss()
+
+  if (mode === 'choose-save-popover') {
+    const collection = ensureEditLaterCollection()
+    veExitCollectionId.value = collection.id
+    veExitCollectionName.value = collection.name
+    veExitChooseSaveOpen.value = true
+    return
+  }
+
   const collection = ensureEditLaterCollection()
   const target: SaveTarget = { kind: 'article', title: article.value }
   const key = keyOf(target)
   save(target)
   addToCollection(target, collection.id)
 
-  veMode.value = false
-
-  show(
-    {
-      type: 'notice',
-      text: 'Added to ',
-      link: {
-        label: collection.name,
-        to: `${SAVED_PATH}?collection=${collection.id}`,
+  if (mode === 'toast') {
+    show(
+      {
+        type: 'notice',
+        text: 'Added to ',
+        link: {
+          label: collection.name,
+          to: `${SAVED_PATH}?collection=${collection.id}`,
+        },
+        actionLabel: 'Undo',
       },
-      actionLabel: 'Undo',
+      () => unsave(key),
+    )
+    return
+  }
+
+  veExitUndoKey.value = key
+  veExitCollectionId.value = collection.id
+  veExitCollectionName.value = collection.name
+  veExitPopoverOpen.value = true
+}
+
+function onVeExitChooseSave() {
+  const collection = ensureEditLaterCollection()
+  const target: SaveTarget = { kind: 'article', title: article.value }
+  save(target)
+  addToCollection(target, collection.id)
+  show({
+    variant: 'snackbar',
+    type: 'notice',
+    text: `${article.value} added to `,
+    link: {
+      label: collection.name,
+      to: `${SAVED_PATH}?collection=${collection.id}`,
     },
-    () => unsave(key),
-  )
+    dismissable: false,
+  })
+}
+
+function onVeExitPopoverUndo() {
+  if (veExitUndoKey.value) unsave(veExitUndoKey.value)
+  veExitUndoKey.value = null
 }
 
 function onVeDiscardEdits() {
@@ -293,6 +361,21 @@ function onCollectionCreated(collection: Collection) {
         :added-to-collection="popoverAddedTo"
         :sheet="globalSkin === 'mobile'"
         @create-collection="dialogOpen = true"
+      />
+      <VeExitEditLaterPopover
+        v-model:open="veExitPopoverOpen"
+        :article-title="article"
+        :collection-id="veExitCollectionId"
+        :collection-name="veExitCollectionName"
+        :sheet="globalSkin === 'mobile'"
+        @undo="onVeExitPopoverUndo"
+      />
+      <VeExitChooseSavePopover
+        v-model:open="veExitChooseSaveOpen"
+        :collection-id="veExitCollectionId"
+        :collection-name="veExitCollectionName"
+        :sheet="globalSkin === 'mobile'"
+        @save="onVeExitChooseSave"
       />
     </template>
   </SavedChrome>

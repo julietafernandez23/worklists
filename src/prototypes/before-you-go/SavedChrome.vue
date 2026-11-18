@@ -20,6 +20,7 @@ import type { HeaderItem } from '@/components/header/headerItems'
 import { useConfig } from '@/composables/useConfig'
 import { iconSaved } from './icons'
 import MobileUserMenu from './MobileUserMenu.vue'
+import PrototypeSettingsMenu from './PrototypeSettingsMenu.vue'
 import PrototypeToast from './PrototypeToast.vue'
 import SavedTip from './SavedTip.vue'
 import UserMenu from './UserMenu.vue'
@@ -92,6 +93,9 @@ watch(
     <ChromeWrapper :last-edited-notice="lastEditedNotice">
       <template #header>
         <ChromeHeader username="Username" :right="MOBILE_HEADER_RIGHT">
+          <template #menu>
+            <PrototypeSettingsMenu />
+          </template>
           <template #nav>
             <CdxButton weight="quiet" aria-label="Appearance">
               <CdxIcon :icon="cdxIconAppearance" />
