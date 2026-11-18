@@ -47,12 +47,8 @@ function onClose() {
       :use-bottom-sheet="bottomSheet"
       placement="bottom-end"
       hide-arrow
-      :stacked-actions="true"
-      :primary-action="{ label: 'Got it', actionType: 'progressive' }"
-      :default-action="{ label: 'Undo' }"
+      stacked-actions
       close-button-label="Close"
-      @primary="onGotIt"
-      @default="onUndo"
     >
       <template #header>
         <p class="cdx-popover__header__title ve-exit-edit-later-popover__title">
@@ -77,6 +73,26 @@ function onClose() {
       <p class="ve-exit-edit-later-popover__body">
         You can easily find this article and return to edit it whenever you're ready.
       </p>
+
+      <template #footer>
+        <div class="cdx-popover__footer__actions cdx-popover__footer__actions--vertical">
+          <CdxButton
+            class="cdx-popover__footer__primary-action"
+            weight="primary"
+            action="progressive"
+            @click="onGotIt"
+          >
+            Got it
+          </CdxButton>
+          <CdxButton
+            class="cdx-popover__footer__default-action"
+            weight="quiet"
+            @click="onUndo"
+          >
+            Remove from Collection
+          </CdxButton>
+        </div>
+      </template>
     </CdxPopover>
   </div>
 </template>

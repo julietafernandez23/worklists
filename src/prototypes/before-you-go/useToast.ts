@@ -16,7 +16,7 @@ export interface Toast {
   dismissable?: boolean
 }
 
-const TOAST_MS = 5000
+const TOAST_MS = 9000
 
 const state = reactive<{ current: Toast | null }>({ current: null })
 let timer: ReturnType<typeof setTimeout> | undefined
