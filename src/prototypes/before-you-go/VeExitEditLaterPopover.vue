@@ -45,6 +45,7 @@ function onClose() {
       :anchor="anchor"
       class="ve-exit-edit-later-popover"
       :use-bottom-sheet="bottomSheet"
+      hide-backdrop
       placement="bottom-end"
       hide-arrow
       stacked-actions

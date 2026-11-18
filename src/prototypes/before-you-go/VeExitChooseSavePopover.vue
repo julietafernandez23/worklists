@@ -40,6 +40,7 @@ function onNotNow() {
       :anchor="anchor"
       class="ve-exit-choose-save-popover"
       :use-bottom-sheet="bottomSheet"
+      hide-backdrop
       placement="bottom-end"
       hide-arrow
       close-button-label="Close"
