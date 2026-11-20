@@ -118,6 +118,7 @@ function onRowClick(collection: Collection) {
       type: 'success',
       text: `${label.value} has been added to`,
       link: collectionLink(collection),
+      persistent: true,
     })
   }
   close()

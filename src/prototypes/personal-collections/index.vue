@@ -44,6 +44,16 @@ const { show, dismiss } = useToast()
 const article = computed(() => normalizeTitle(String(route.query.title || startArticle.value)))
 const saved = computed(() => isSaved(article.value))
 
+/** Bare entry links seed a random article — reflect it in the URL without re-seeding. */
+watch(
+  () => route.query.title,
+  (title) => {
+    if (title) return
+    void router.replace({ path: ARTICLE_PATH, query: { title: startArticle.value } })
+  },
+  { immediate: true },
+)
+
 /** Where a Saved-page card asked to land: a section anchor or a saved passage's text. */
 const focusSection = computed(() => (route.query.section ? String(route.query.section) : undefined))
 const focusExcerpt = computed(() => {
@@ -150,6 +160,7 @@ function onCollectionCreated(collection: Collection) {
     type: 'success',
     text: `${labelOf(popoverTarget.value)} has been added to`,
     link: { label: collection.name, to: `${SAVED_PATH}?collection=${collection.id}` },
+    persistent: true,
   })
 }
 </script>
@@ -303,5 +314,17 @@ function onCollectionCreated(collection: Collection) {
 
 .pc-mobile-bookmark[aria-pressed='true'] :deep(.cdx-icon) {
   color: var(--color-base, #202122);
+}
+
+/* Hide the lead thumb/figure above the opening paragraph (first hero image). */
+.pc-article :deep(section[data-mw-section-id='0'] > figure),
+.pc-article :deep(section[data-mw-section-id='0'] > .thumb),
+.pc-article :deep(section[data-mw-section-id='0'] figure.mw-default-size) {
+  display: none;
+}
+
+.pc-article :deep(table.infobox tr.infobox-image),
+.pc-article :deep(table.infobox .infobox-image) {
+  display: none;
 }
 </style>

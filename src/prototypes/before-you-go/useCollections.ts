@@ -100,9 +100,6 @@ export type CollectionsView = 'expanded' | 'compact'
 export const ARTICLE_PATH = '/before-you-go'
 export const SAVED_PATH = '/before-you-go/saved'
 
-/** Opening article per starting point: pre-filled collections vs none yet (`?reset`). */
-const START_ARTICLE = { withCollections: 'Blue-gray tanager', empty: 'Resplendent quetzal' }
-
 export function normalizeTitle(title: string): string {
   return title.replace(/_/g, ' ').trim()
 }
@@ -261,17 +258,54 @@ const SEED_COLLECTIONS: (Omit<Collection, 'updatedAt'> & { keys: string[] })[] =
 ]
 
 /**
+ * Live articles for the landing page — kept disjoint from {@link SEED_TARGETS} so
+ * the bookmark is not already “on” when collections are pre-filled.
+ */
+const OPENING_ARTICLE_CANDIDATES = [
+  'Blue-gray tanager',
+  'Resplendent quetzal',
+  'Wet Leg',
+  'Koala',
+  'Platypus',
+  'Echidna',
+  'Emperor penguin',
+  'Giant panda',
+  'Red panda',
+  'Capybara',
+  'Narwhal',
+  'Giraffe',
+  'Cheetah',
+  'Monarch butterfly',
+  'Coral bleaching',
+  'Bengal tiger',
+  'Sloth',
+  'Manatee',
+] as const
+
+/** Random article when the prototype link opens without `?title=`. */
+function pickOpeningArticle(forPreFilledDemo: boolean): string {
+  const savedTitles = new Set(
+    SEED_TARGETS.filter((t) => t.kind === 'article').map((t) => t.title),
+  )
+  const pool = forPreFilledDemo
+    ? OPENING_ARTICLE_CANDIDATES.filter((t) => !savedTitles.has(t))
+    : [...OPENING_ARTICLE_CANDIDATES]
+  return pool[Math.floor(Math.random() * pool.length)] ?? OPENING_ARTICLE_CANDIDATES[0]
+}
+
+/**
  * Starting point: plenty already saved. `withCollections: false` starts from
  * scratch — nothing saved, no collections — with the first-save onboarding.
  */
 function seedState(withCollections = true): State {
+  const startArticle = pickOpeningArticle(withCollections)
   if (!withCollections) {
-    return { startArticle: START_ARTICLE.empty, collections: [], items: [], onboarding: 'waiting' }
+    return { startArticle, collections: [], items: [], onboarding: 'waiting' }
   }
   const now = Date.now()
   const collections = SEED_COLLECTIONS
   return {
-    startArticle: START_ARTICLE.withCollections,
+    startArticle,
     onboarding: 'done',
     // No real history for the samples: keep their listed order as "last modified".
     collections: collections.map(({ id, name }, i) => ({ id, name, updatedAt: now - i * 60_000 })),
@@ -322,8 +356,8 @@ function isState(value: unknown): value is State {
 /**
  * Starting point for this page load, decided before anything renders so the
  * right article loads first time:
- *  - `?reset` → nothing saved, no collections, opens on Resplendent quetzal
- *  - bare `/before-you-go` → pre-filled collections, opens on Blue-gray tanager
+ *  - `?reset` → nothing saved, no collections, random opening article
+ *  - bare `/before-you-go` → pre-filled collections, random opening article
  *  - anything else → carry on with what's stored
  * (`SavedChrome` then tidies `?reset` out of the URL.)
  */
@@ -367,11 +401,9 @@ const ui = reactive({
   collectionsView: (readStorage<CollectionsView>(COLLECTIONS_VIEW_KEY) === 'compact'
     ? 'compact'
     : 'expanded') as CollectionsView,
-  showEditingInfo: readStorage<boolean>(EDITING_INFO_KEY) === true,
-  /** Settings-menu beacon for “Display editing information” — cleared after opt-in. */
-  editingInfoIntroComplete:
-    readStorage<boolean>(EDITING_INFO_INTRO_KEY) === true
-    || readStorage<boolean>(EDITING_INFO_KEY) === true,
+  /** Editing signals on saved article cards (no global toggle in settings for now). */
+  showEditingInfo: true,
+  editingInfoIntroComplete: true,
 })
 
 // Persist straight away too, so a fresh starting point survives a refresh
@@ -391,17 +423,6 @@ watch(
   (view) => writeStorage(COLLECTIONS_VIEW_KEY, view),
 )
 watch(
-  () => ui.showEditingInfo,
-  (on) => {
-    writeStorage(EDITING_INFO_KEY, on)
-    if (on) ui.editingInfoIntroComplete = true
-  },
-)
-watch(
-  () => ui.editingInfoIntroComplete,
-  (done) => writeStorage(EDITING_INFO_INTRO_KEY, done),
-)
-watch(
   explorations,
   (value) => writeStorage(EXPLORATIONS_KEY, value),
   { deep: true },
@@ -417,7 +438,6 @@ watch(
   (_mode, prev) => {
     if (prev === undefined) return
     Object.assign(state, seedState(usesPreFilledSaves()))
-    ui.showEditingInfo = false
   },
 )
 

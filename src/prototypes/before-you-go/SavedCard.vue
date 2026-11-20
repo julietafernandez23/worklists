@@ -35,11 +35,10 @@ const props = defineProps<{
   thumb?: boolean
 }>()
 
-const { summary, ui } = useCollections()
+const { summary } = useCollections()
 const data = computed(() => summary(props.item.title))
-const showEditingInfo = computed(() => ui.showEditingInfo && props.item.kind === 'article')
 const editingSignals = computed(() =>
-  showEditingInfo.value ? savedEditingSignalsForKey(props.item.key) : null,
+  props.item.kind === 'article' ? savedEditingSignalsForKey(props.item.key) : null,
 )
 const articleTitle = computed(() => data.value?.title ?? props.item.title)
 /** A section's own image when it had one, otherwise the article's lead image. */

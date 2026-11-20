@@ -6,6 +6,8 @@ export interface Toast {
   /** Text before the optional link, e.g. "Wombat has been added to". */
   text: string
   link?: { label: string; to: string }
+  /** Stay until dismiss or link click — no auto-timeout. */
+  persistent?: boolean
 }
 
 const TOAST_MS = 5000
@@ -19,7 +21,9 @@ export function useToast() {
   function show(toast: Omit<Toast, 'id'>) {
     clearTimeout(timer)
     state.current = { ...toast, id: nextId++ }
-    timer = setTimeout(dismiss, TOAST_MS)
+    if (!toast.persistent) {
+      timer = setTimeout(dismiss, TOAST_MS)
+    }
   }
 
   function dismiss() {

@@ -26,12 +26,7 @@ import CollectionThumb from '../CollectionThumb.vue'
 import CreateCollectionDialog from '../CreateCollectionDialog.vue'
 import SavedCard from '../SavedCard.vue'
 import SavedChrome from '../SavedChrome.vue'
-import {
-  isEditLaterCollection,
-  SAVED_PATH,
-  useCollections,
-  type Collection,
-} from '../useCollections'
+import { SAVED_PATH, useCollections, type Collection } from '../useCollections'
 import { globalSkin } from '@/theme'
 
 const SAVED_PAGE = SAVED_PATH
@@ -42,15 +37,6 @@ const { collections, ui, findCollection, itemsIn } = useCollections()
 
 const activeCollection = computed(() => findCollection(String(route.query.collection ?? '')))
 const visibleItems = computed(() => itemsIn(activeCollection.value?.id))
-
-/** Edit later links land here — turn on editing signals for that collection view. */
-watch(
-  activeCollection,
-  (collection) => {
-    if (isEditLaterCollection(collection)) ui.showEditingInfo = true
-  },
-  { immediate: true },
-)
 
 /** Phones (Minerva) get their own layout: All items / Collections tabs, collections as a list. */
 const isMobile = computed(() => globalSkin.value === 'mobile')
@@ -212,7 +198,10 @@ function onCollectionCreated(collection: Collection) {
       <template v-if="layout === 'tabs'">
         <nav
           class="saved-m-tabs"
-          :class="{ 'saved-m-tabs--in-collection': activeCollection }"
+          :class="{
+            'saved-m-tabs--in-collection': activeCollection,
+            'saved-m-tabs--collections-list': !isMobile && !activeCollection,
+          }"
           aria-label="Saved"
         >
           <RouterLink
@@ -797,6 +786,12 @@ function onCollectionCreated(collection: Collection) {
 .saved-m-tabs--in-collection {
   width: 100%;
   border-bottom: 0;
+}
+
+/* Collections-page nav on desktop: tabs + gear, no rule under the row. */
+.saved-m-tabs--collections-list {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .saved-m-tabs__tab {

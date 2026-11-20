@@ -14,6 +14,8 @@ export interface Toast {
   actionLabel?: string
   /** Snackbar: show a close control (default true for snackbar). */
   dismissable?: boolean
+  /** Stay until dismiss, link click, or action — no auto-timeout. */
+  persistent?: boolean
 }
 
 const TOAST_MS = 9000
@@ -29,7 +31,10 @@ export function useToast() {
     clearTimeout(timer)
     actionHandler = onAction
     state.current = { ...toast, id: nextId++ }
-    if (toast.variant !== 'snackbar' || !toast.actionLabel) {
+    if (
+      !toast.persistent
+      && (toast.variant !== 'snackbar' || !toast.actionLabel)
+    ) {
       timer = setTimeout(dismiss, TOAST_MS)
     }
   }

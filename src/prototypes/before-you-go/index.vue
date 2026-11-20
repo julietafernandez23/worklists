@@ -61,6 +61,16 @@ const { show, dismiss } = useToast()
 const article = computed(() => normalizeTitle(String(route.query.title || startArticle.value)))
 const saved = computed(() => isSaved(article.value))
 
+/** Bare entry links seed a random article — reflect it in the URL without re-seeding. */
+watch(
+  () => route.query.title,
+  (title) => {
+    if (title) return
+    void router.replace({ path: ARTICLE_PATH, query: { title: startArticle.value } })
+  },
+  { immediate: true },
+)
+
 /** Where a Saved-page card asked to land: a section anchor or a saved passage's text. */
 const focusSection = computed(() => (route.query.section ? String(route.query.section) : undefined))
 const focusExcerpt = computed(() => {
@@ -161,6 +171,7 @@ function onVeExitWithoutEdits() {
           to: `${SAVED_PATH}?collection=${collection.id}`,
         },
         actionLabel: 'Undo',
+        persistent: true,
       },
       () => unsave(key),
     )
@@ -186,7 +197,8 @@ function onVeExitChooseSave() {
       label: collection.name,
       to: `${SAVED_PATH}?collection=${collection.id}`,
     },
-    dismissable: false,
+    persistent: true,
+    dismissable: true,
   })
 }
 
@@ -285,6 +297,7 @@ function onCollectionCreated(collection: Collection) {
     type: 'success',
     text: `${labelOf(popoverTarget.value)} has been added to`,
     link: { label: collection.name, to: `${SAVED_PATH}?collection=${collection.id}` },
+    persistent: true,
   })
 }
 </script>

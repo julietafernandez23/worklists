@@ -39,6 +39,7 @@ const userDidEdit = ref(false)
 const contentRef = ref<HTMLElement | null>(null)
 const showPublishConfirm = ref(false)
 const discardDialogOpen = ref(false)
+const beforeYouGoDialogOpen = ref(false)
 
 const htmlCache = new Map<string, string>()
 
@@ -126,6 +127,15 @@ function onBackToRead() {
     discardDialogOpen.value = true
     return
   }
+  beforeYouGoDialogOpen.value = true
+}
+
+function onViewSuggestions() {
+  beforeYouGoDialogOpen.value = false
+}
+
+function onLeaveEditor() {
+  beforeYouGoDialogOpen.value = false
   exitWithoutEdits()
 }
 
@@ -212,6 +222,32 @@ function onPublish() {
       </CdxButton>
     </div>
   </div>
+
+  <CdxDialog
+    v-model:open="beforeYouGoDialogOpen"
+    class="ve-before-you-go-dialog"
+    title="Before you go"
+    close-button-label="Close"
+    :dismissable="true"
+  >
+    <p class="ve-before-you-go-dialog__message">
+      There are some guided tasks to improve this article. Do you want to try them?
+    </p>
+    <template #footer>
+      <div class="ve-before-you-go-dialog__actions">
+        <CdxButton
+          class="ve-before-you-go-dialog__btn ve-before-you-go-dialog__btn--suggestions"
+          weight="normal"
+          @click="onViewSuggestions"
+        >
+          View suggestions
+        </CdxButton>
+        <CdxButton class="ve-before-you-go-dialog__btn" weight="normal" @click="onLeaveEditor">
+          Leave the editor
+        </CdxButton>
+      </div>
+    </template>
+  </CdxDialog>
 
   <CdxDialog
     v-model:open="discardDialogOpen"
@@ -371,6 +407,27 @@ function onPublish() {
 
 .ve__toolbar :deep(.cdx-button) {
   min-height: 52px;
+}
+
+.ve-before-you-go-dialog__message {
+  margin: 0;
+}
+
+.ve-before-you-go-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-75);
+  width: 100%;
+}
+
+.ve-before-you-go-dialog__btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.ve-before-you-go-dialog__btn--suggestions:not(:disabled) {
+  background-color: var(--background-color-progressive-subtle, #eaf3ff);
+  color: var(--color-progressive, #36c);
 }
 
 .ve-discard-dialog__message {

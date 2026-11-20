@@ -198,7 +198,10 @@ function onCollectionCreated(collection: Collection) {
       <template v-if="layout === 'tabs'">
         <nav
           class="saved-m-tabs"
-          :class="{ 'saved-m-tabs--in-collection': activeCollection }"
+          :class="{
+            'saved-m-tabs--in-collection': activeCollection,
+            'saved-m-tabs--collections-list': !isMobile && !activeCollection,
+          }"
           aria-label="Saved"
         >
           <RouterLink
@@ -783,6 +786,12 @@ function onCollectionCreated(collection: Collection) {
 .saved-m-tabs--in-collection {
   width: 100%;
   border-bottom: 0;
+}
+
+/* Collections-page nav on desktop: tabs + gear, no rule under the row. */
+.saved-m-tabs--collections-list {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .saved-m-tabs__tab {
