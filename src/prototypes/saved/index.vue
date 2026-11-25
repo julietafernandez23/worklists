@@ -26,14 +26,26 @@ import CollectionThumb from '../personal-collections/CollectionThumb.vue'
 import CreateCollectionDialog from '../personal-collections/CreateCollectionDialog.vue'
 import SavedCard from '../personal-collections/SavedCard.vue'
 import SavedChrome from '../personal-collections/SavedChrome.vue'
-import { SAVED_PATH, useCollections, type Collection } from '../personal-collections/useCollections'
+import {
+  DEFAULT_COLLECTION_NAME,
+  MILESTONE_COLLECTION_ID,
+} from '../milestone-emails/recommendations'
+import StartCollectionDialog from '../milestone-emails/StartCollectionDialog.vue'
+import {
+  SAVED_PATH,
+  useCollections,
+  type Collection,
+} from '../personal-collections/useCollections'
 import { globalSkin } from '@/theme'
+
+const MILESTONE_EMAIL_ENTRY = 'milestone-email'
 
 const SAVED_PAGE = SAVED_PATH
 
 const route = useRoute()
 const router = useRouter()
-const { collections, ui, findCollection, itemsIn } = useCollections()
+const { collections, ui, findCollection, itemsIn, ensureCollection, clearCollection, setCollectionArticles } =
+  useCollections()
 
 const activeCollection = computed(() => findCollection(String(route.query.collection ?? '')))
 const visibleItems = computed(() => itemsIn(activeCollection.value?.id))
@@ -98,6 +110,46 @@ const compactRows = computed(
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dialogOpen = ref(false)
+const milestoneCollectionDialogOpen = ref(false)
+
+function resetMilestoneCollectionForSession() {
+  ensureCollection(MILESTONE_COLLECTION_ID, DEFAULT_COLLECTION_NAME)
+  clearCollection(MILESTONE_COLLECTION_ID)
+}
+
+watch(
+  () => route.query.from,
+  (from) => {
+    const open = from === MILESTONE_EMAIL_ENTRY
+    milestoneCollectionDialogOpen.value = open
+    if (open) resetMilestoneCollectionForSession()
+  },
+  { immediate: true },
+)
+
+function clearMilestoneEntryQuery() {
+  if (route.query.from !== MILESTONE_EMAIL_ENTRY) return
+  const { from: _from, ...rest } = route.query
+  void router.replace({ path: SAVED_PAGE, query: rest })
+}
+
+watch(milestoneCollectionDialogOpen, (open) => {
+  if (open || route.query.collection) return
+  clearMilestoneEntryQuery()
+})
+
+async function onMilestoneCollectionCreate(payload: { name: string; articles: string[] }) {
+  const collection = ensureCollection(
+    MILESTONE_COLLECTION_ID,
+    payload.name.trim() || DEFAULT_COLLECTION_NAME,
+  )
+  setCollectionArticles(collection.id, payload.articles)
+  await router.replace({
+    path: SAVED_PAGE,
+    query: { collection: MILESTONE_COLLECTION_ID },
+  })
+  milestoneCollectionDialogOpen.value = false
+}
 
 function collectionTo(collection: Collection) {
   return { path: SAVED_PAGE, query: { collection: collection.id } }
@@ -465,6 +517,10 @@ function onCollectionCreated(collection: Collection) {
   </SavedChrome>
 
   <CreateCollectionDialog v-model:open="dialogOpen" @created="onCollectionCreated" />
+  <StartCollectionDialog
+    v-model:open="milestoneCollectionDialogOpen"
+    @create="onMilestoneCollectionCreate"
+  />
 </template>
 
 <style scoped>

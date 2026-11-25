@@ -380,7 +380,13 @@ function readExplorations(): BeforeYouGoExplorations {
   const stored = readStorage<Record<string, unknown>>(EXPLORATIONS_KEY)
   if (stored && typeof stored.veExitEditLater === 'string') {
     const mode = stored.veExitEditLater
-    if (mode === 'toast' || mode === 'popover' || mode === 'choose-save-popover' || mode === 'off') {
+    if (
+      mode === 'toast' ||
+      mode === 'popover' ||
+      mode === 'choose-save-popover' ||
+      mode === 'invite-collection-ui' ||
+      mode === 'off'
+    ) {
       return { veExitEditLater: mode }
     }
   }

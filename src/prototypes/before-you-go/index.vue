@@ -26,6 +26,7 @@ import SavePopover from './SavePopover.vue'
 import StickyHeader from './StickyHeader.vue'
 import VeExitChooseSavePopover from './VeExitChooseSavePopover.vue'
 import VeExitEditLaterPopover from './VeExitEditLaterPopover.vue'
+import VeExitInviteCollectionPopover from './VeExitInviteCollectionPopover.vue'
 import VisualEditorStandIn from './VisualEditorStandIn.vue'
 import {
   ARTICLE_PATH,
@@ -89,6 +90,7 @@ const dialogOpen = ref(false)
 const veMode = ref(false)
 const veExitPopoverOpen = ref(false)
 const veExitChooseSaveOpen = ref(false)
+const veExitInviteCollectionOpen = ref(false)
 const veExitUndoKey = ref<string | null>(null)
 const veExitCollectionId = ref('')
 const veExitCollectionName = ref(EDIT_LATER_COLLECTION)
@@ -98,6 +100,7 @@ watch(article, () => {
   popoverAddedTo.value = null
   veExitPopoverOpen.value = false
   veExitChooseSaveOpen.value = false
+  veExitInviteCollectionOpen.value = false
   parserRoot.value = null
   veMode.value = false
   window.scrollTo(0, 0)
@@ -114,6 +117,7 @@ watch(
     dismiss()
     veExitPopoverOpen.value = false
     veExitChooseSaveOpen.value = false
+    veExitInviteCollectionOpen.value = false
     popoverOpen.value = false
     popoverAddedTo.value = null
     veMode.value = false
@@ -155,6 +159,11 @@ function onVeExitWithoutEdits() {
     return
   }
 
+  if (mode === 'invite-collection-ui') {
+    veExitInviteCollectionOpen.value = true
+    return
+  }
+
   const collection = ensureEditLaterCollection()
   const target: SaveTarget = { kind: 'article', title: article.value }
   const key = keyOf(target)
@@ -182,6 +191,11 @@ function onVeExitWithoutEdits() {
   veExitCollectionId.value = collection.id
   veExitCollectionName.value = collection.name
   veExitPopoverOpen.value = true
+}
+
+async function onVeInviteCollectionSave() {
+  veExitInviteCollectionOpen.value = false
+  await requestSave({ kind: 'article', title: article.value })
 }
 
 function onVeExitChooseSave() {
@@ -389,6 +403,11 @@ function onCollectionCreated(collection: Collection) {
         :collection-name="veExitCollectionName"
         :sheet="globalSkin === 'mobile'"
         @save="onVeExitChooseSave"
+      />
+      <VeExitInviteCollectionPopover
+        v-model:open="veExitInviteCollectionOpen"
+        :sheet="globalSkin === 'mobile'"
+        @save-to-collection="onVeInviteCollectionSave"
       />
     </template>
   </SavedChrome>

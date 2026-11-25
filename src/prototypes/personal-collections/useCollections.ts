@@ -492,6 +492,22 @@ export function useCollections() {
     touch(collectionId)
   }
 
+  /** Remove every saved item from a collection (items remain on All items). */
+  function clearCollection(collectionId: string): void {
+    for (const item of state.items) {
+      delete item.collections[collectionId]
+    }
+    touch(collectionId)
+  }
+
+  /** Replace a collection’s membership with exactly these article titles. */
+  function setCollectionArticles(collectionId: string, titles: string[]): void {
+    clearCollection(collectionId)
+    for (const title of titles) {
+      addToCollection({ kind: 'article', title }, collectionId)
+    }
+  }
+
   function findCollection(id: string | null | undefined): Collection | undefined {
     return id ? state.collections.find((c) => c.id === id) : undefined
   }
@@ -523,6 +539,18 @@ export function useCollections() {
   function createCollection(name: string): Collection {
     // Just modified, so a new collection shows at the top of every list.
     const collection = { id: slugify(name), name: name.trim(), updatedAt: Date.now() }
+    state.collections.unshift(collection)
+    return collection
+  }
+
+  /** Prototype helper — create only when `id` is not taken (stable deep links). */
+  function ensureCollection(id: string, name: string): Collection {
+    const existing = findCollection(id)
+    if (existing) {
+      touch(id)
+      return existing
+    }
+    const collection = { id, name: name.trim(), updatedAt: Date.now() }
     state.collections.unshift(collection)
     return collection
   }
@@ -569,11 +597,14 @@ export function useCollections() {
     isInCollection,
     addToCollection,
     removeFromCollection,
+    clearCollection,
+    setCollectionArticles,
     findCollection,
     nameTaken,
     renameCollection,
     deleteCollection,
     createCollection,
+    ensureCollection,
     itemsIn,
     findPassage,
     summary,
