@@ -1,1 +1,0 @@
-import{d as s,B as a,b as n,k as u,u as c,o as m}from"./index-DiP6Q6ku.js";import{S as p}from"./useCollections-BIv0Ydts.js";const d=s({__name:"index",setup(i){const t=u(),o=c();return a(()=>{const{title:r,...e}=t.query;o.replace({path:p,query:{...e,from:"milestone-email"}})}),(r,e)=>(m(),n("span"))}});export{d as default};
